@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production build output
+dist/
+build/
+coverage/
+
+# Environment and secrets (NEVER commit credentials)
+.env
+.env.*
+!.env.example
+*.env.local
+*.pem
+*.key
+*.cert
+*.crt
+serviceAccountKey*.json
+*credentials*.json
+*secret*.json
+
+# Firebase local configurations containing API keys & debug logs
+firebase-applet-config.json
+firebase-applet-config*.json
+firebase-debug.log*
+.firebase/
+
+# OS and IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
