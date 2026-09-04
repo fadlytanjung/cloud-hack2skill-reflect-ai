@@ -119,25 +119,25 @@ gcloud builds submit --tag "${IMAGE_TAG}" --project="$PROJECT_ID" .
 # nothing to change.
 if gcloud run services describe "$SERVICE_NAME" --region="$REGION" --project="$PROJECT_ID" >/dev/null 2>&1; then
   echo "Checking existing service spec for legacy source-deploy metadata..."
-  TEMP_SVC_YAML=$(mktemp)
-  TEMP_CLEAN_YAML=$(mktemp)
-  trap 'rm -f "$TEMP_SVC_YAML" "$TEMP_CLEAN_YAML"' EXIT
+  TEMP_SVC_SPEC=$(mktemp)
+  TEMP_CLEAN_SPEC=$(mktemp)
+  trap 'rm -f "$TEMP_SVC_SPEC" "$TEMP_CLEAN_SPEC"' EXIT
 
   gcloud run services describe "$SERVICE_NAME" \
-    --region="$REGION" --project="$PROJECT_ID" --format=export > "$TEMP_SVC_YAML"
+    --region="$REGION" --project="$PROJECT_ID" --format=json > "$TEMP_SVC_SPEC"
 
   set +e
   python3 "$(dirname "$0")/normalize-cloud-run-service.py" \
     --image "${IMAGE_TAG}" \
     --secret-mount-dir "${SECRET_MOUNT_DIR}" \
-    < "$TEMP_SVC_YAML" > "$TEMP_CLEAN_YAML"
+    < "$TEMP_SVC_SPEC" > "$TEMP_CLEAN_SPEC"
   NORMALIZE_STATUS=$?
   set -e
 
   case "$NORMALIZE_STATUS" in
     0)
       echo "Applying normalized service spec..."
-      gcloud run services replace "$TEMP_CLEAN_YAML" \
+      gcloud run services replace "$TEMP_CLEAN_SPEC" \
         --region="$REGION" --project="$PROJECT_ID" --quiet
       echo "✓ Legacy service metadata removed"
       ;;

@@ -22,12 +22,14 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 
 try:
     import yaml
+    HAVE_YAML = True
 except ImportError:
-    sys.exit("error: PyYAML is required (pip3 install pyyaml)")
+    HAVE_YAML = False
 
 # Annotations that only make sense for a source-based deploy. The first two name
 # a container built from source; once we supply our own image they point at
@@ -148,9 +150,24 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    doc = yaml.safe_load(sys.stdin.read())
+    raw_input = sys.stdin.read()
+    doc = None
+    input_is_json = False
+
+    try:
+        doc = json.loads(raw_input)
+        input_is_json = True
+    except Exception:
+        if HAVE_YAML:
+            doc = yaml.safe_load(raw_input)
+        else:
+            sys.exit(
+                "error: stdin is not JSON and PyYAML is not installed. "
+                "Export service as JSON (--format=json) or install pyyaml (pip3 install pyyaml)."
+            )
+
     if not isinstance(doc, dict):
-        raise SystemExit("error: stdin is not a Cloud Run service YAML")
+        raise SystemExit("error: stdin is not a valid Cloud Run service specification")
 
     changes = normalize(doc, args.image, args.secret_mount_dir)
 
@@ -160,7 +177,12 @@ def main() -> int:
 
     for change in changes:
         print(f"  - {change}", file=sys.stderr)
-    yaml.safe_dump(doc, sys.stdout, sort_keys=False, default_flow_style=False)
+
+    if input_is_json or not HAVE_YAML:
+        json.dump(doc, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+    else:
+        yaml.safe_dump(doc, sys.stdout, sort_keys=False, default_flow_style=False)
     return 0
 
 

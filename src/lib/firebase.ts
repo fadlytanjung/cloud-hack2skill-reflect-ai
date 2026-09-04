@@ -205,14 +205,20 @@ export async function signInWithGoogle(): Promise<User> {
 
     console.error("Google popup sign-in error:", error);
     if (error?.code === "auth/unauthorized-domain") {
-      throw new Error(
-        `Domain '${window.location.hostname}' is not authorized in Firebase Auth. Add '${window.location.hostname}' in Firebase Console -> Authentication -> Settings -> Authorized Domains.`
+      const hostname = typeof window !== "undefined" ? window.location.hostname : "preview domain";
+      const domainError = new Error(
+        `Domain '${hostname}' is not authorized in Firebase Auth. Add '${hostname}' in Firebase Console -> Authentication -> Settings -> Authorized Domains.`
       );
+      (domainError as any).code = "auth/unauthorized-domain";
+      (domainError as any).unauthorizedDomain = hostname;
+      throw domainError;
     }
     if (error?.code === "auth/popup-blocked") {
-      throw new Error(
+      const popupError = new Error(
         "Sign-in popup was blocked by your browser. Please allow popups for this site or open in a new tab."
       );
+      (popupError as any).code = "auth/popup-blocked";
+      throw popupError;
     }
     if (isReferrerBlocked(error)) {
       const authDomain = firebaseConfig.authDomain || "your-firebase-project.firebaseapp.com";
