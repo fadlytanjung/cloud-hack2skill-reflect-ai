@@ -114,11 +114,14 @@ npm run deploy:cloud-run
 # or: bash scripts/deploy-cloud-run.sh
 ```
 
-### Or Manually via gcloud:
+### Or Manually via gcloud & Cloud Build:
 ```bash
-# Build and deploy with Secret Manager environment injection
+# 1. Build production container using Dockerfile & Cloud Build
+gcloud builds submit --tag gcr.io/<YOUR_GCP_PROJECT_ID>/reflectai-journal-reflection-assistant:latest .
+
+# 2. Deploy container image to Cloud Run with Secret Manager binding
 gcloud run deploy reflectai-journal-reflection-assistant \
-  --source . \
+  --image gcr.io/<YOUR_GCP_PROJECT_ID>/reflectai-journal-reflection-assistant:latest \
   --platform managed \
   --region us-west1 \
   --allow-unauthenticated \

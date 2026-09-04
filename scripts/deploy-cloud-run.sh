@@ -73,11 +73,28 @@ if [ -n "$PROJECT_NUMBER" ]; then
     --project="$PROJECT_ID" 2>/dev/null || true
 fi
 
-# 3. Deploy to Google Cloud Run
+# 3. Clean legacy source annotations & deploy application container to Cloud Run
 echo ""
-echo "[3/4] Deploying application container to Cloud Run ($SERVICE_NAME)..."
+echo "[3/4] Building and deploying application container to Cloud Run ($SERVICE_NAME)..."
+
+# Strip legacy AI Studio run.googleapis.com/sources annotation if present on the existing service
+TEMP_SVC_YAML=$(mktemp)
+if gcloud run services describe "$SERVICE_NAME" --region="$REGION" --project="$PROJECT_ID" --format=export > "$TEMP_SVC_YAML" 2>/dev/null; then
+  if grep -q "run.googleapis.com/sources" "$TEMP_SVC_YAML" 2>/dev/null; then
+    echo "ℹ Detected legacy AI Studio 'run.googleapis.com/sources' annotation on existing service. Cleaning annotation..."
+    sed -i.bak '/run.googleapis.com\/sources/d' "$TEMP_SVC_YAML" 2>/dev/null || sed -i '' '/run.googleapis.com\/sources/d' "$TEMP_SVC_YAML" 2>/dev/null || true
+    gcloud run services replace "$TEMP_SVC_YAML" --region="$REGION" --project="$PROJECT_ID" --quiet 2>/dev/null || true
+  fi
+fi
+rm -f "$TEMP_SVC_YAML" "${TEMP_SVC_YAML}.bak" 2>/dev/null || true
+
+IMAGE_TAG="gcr.io/${PROJECT_ID}/${SERVICE_NAME}:latest"
+echo "Building container image using Cloud Build (${IMAGE_TAG})..."
+gcloud builds submit --tag "${IMAGE_TAG}" --project="$PROJECT_ID" .
+
+echo "Deploying container image to Cloud Run ($SERVICE_NAME)..."
 gcloud run deploy "$SERVICE_NAME" \
-  --source . \
+  --image "${IMAGE_TAG}" \
   --platform managed \
   --region "$REGION" \
   --allow-unauthenticated \
