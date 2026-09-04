@@ -20,7 +20,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   return (
     <header id="app-navbar" className="w-full bg-[#fbf9f5] border-b border-[#e6e0d4] text-[#2c2b29] sticky top-0 z-30 shadow-[0_1px_3px_rgba(44,43,41,0.03)]">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div className="w-full px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         {/* Brand */}
         <div className="flex items-center space-x-3">
           <ReflectMascot size="sm" />

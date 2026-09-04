@@ -178,16 +178,16 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-3 sm:p-4 animate-fadeIn">
       <div
         id="admin-dashboard-dialog"
-        className="bg-[#fbf9f5] border border-[#ded7c8] rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+        className="bg-[#fbf9f5] border border-[#ded7c8] rounded-2xl w-full max-w-4xl xl:max-w-5xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
       >
         {/* Header */}
-        <div className="p-4 border-b border-[#e6e0d4] flex items-center justify-between bg-[#ffffff]">
-          <div className="flex items-center space-x-3">
+        <div className="p-4 border-b border-[#e6e0d4] flex items-center justify-between gap-3 bg-[#ffffff]">
+          <div className="flex items-center space-x-3 min-w-0">
             <div
-              className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+              className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
                 isAdmin
                   ? "bg-[#eef4ed] border border-[#cbe1c8] text-[#3c5436]"
                   : "bg-[#fbf3e6] border border-[#ebd7b8] text-[#8c6020]"
@@ -195,13 +195,13 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             >
               <ShieldCheck className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-semibold text-[#2c2b29] font-serif">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                <h3 className="text-base font-semibold text-[#2c2b29] font-serif whitespace-nowrap">
                   Admin & RBAC Control Hub
                 </h3>
                 <span
-                  className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+                  className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border flex items-center gap-1 shrink-0 whitespace-nowrap ${
                     isAdmin
                       ? "bg-[#edf4ec] text-[#375432] border-[#c4dbc1]"
                       : "bg-[#fcf5e8] text-[#875914] border-[#ebd4b1]"
@@ -222,13 +222,13 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                       : "Standard access"}
                 </span>
               </div>
-              <p className="text-[11px] text-[#7c786e]">
+              <p className="text-[11px] text-[#7c786e] truncate hidden sm:block">
                 Role-Based Access Control, Security Rules, and Threat Auditing
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {onSignOut && (
               <button
                 id="modal-switch-account-btn"
@@ -236,28 +236,30 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   onClose();
                   onSignOut();
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer border border-[#ded7c8] bg-[#fbf9f5] hover:bg-[#ede7db] text-[#635d52]"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer border border-[#ded7c8] bg-[#fbf9f5] hover:bg-[#ede7db] text-[#635d52] shrink-0 whitespace-nowrap"
                 title="Sign out and choose another account"
+                aria-label="Switch Account"
               >
-                <LogOut className="w-3.5 h-3.5 text-[#7c786e]" />
-                <span className="hidden sm:inline">Switch Account</span>
+                <LogOut className="w-3.5 h-3.5 text-[#7c786e] shrink-0" />
+                <span className="hidden md:inline">Switch Account</span>
               </button>
             )}
             {isPreviewSession && (
               <button
                 onClick={handleToggleRole}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer border bg-[#f4efe6] hover:bg-[#eae3d5] text-[#635d52] border-[#ded7c8]"
-                title="Sandboxed preview only — switches the demo role locally"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer border bg-[#f4efe6] hover:bg-[#eae3d5] text-[#635d52] border-[#ded7c8] shrink-0 whitespace-nowrap"
+                title={isAdmin ? "Demo: user view" : "Demo: admin view"}
+                aria-label={isAdmin ? "Demo: user view" : "Demo: admin view"}
               >
-                {isAdmin ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
-                <span>{isAdmin ? "Demo: user view" : "Demo: admin view"}</span>
+                {isAdmin ? <Lock className="w-3.5 h-3.5 shrink-0" /> : <Unlock className="w-3.5 h-3.5 shrink-0" />}
+                <span className="hidden sm:inline">{isAdmin ? "Demo: user view" : "Demo: admin view"}</span>
               </button>
             )}
             <button
               onClick={onClose}
               aria-label="Close Security Hub"
               title="Close Security Hub"
-              className="text-[#7c786e] hover:text-[#2c2b29] p-1.5 rounded-lg hover:bg-[#ede7db] transition cursor-pointer"
+              className="text-[#7c786e] hover:text-[#2c2b29] p-1.5 rounded-lg hover:bg-[#ede7db] transition cursor-pointer shrink-0"
             >
               <X className="w-4 h-4" />
             </button>
@@ -265,36 +267,39 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-[#e6e0d4] bg-[#f5f1e8] px-4 text-xs font-medium text-[#7c786e]">
+        <div className="flex border-b border-[#e6e0d4] bg-[#f5f1e8] px-4 text-xs font-medium text-[#7c786e] overflow-x-auto no-scrollbar gap-1">
           <button
             onClick={() => setActiveTab("overview")}
-            className={`py-2.5 px-3 border-b-2 transition cursor-pointer ${
+            className={`py-2.5 px-3 border-b-2 transition cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
               activeTab === "overview"
                 ? "border-[#476340] text-[#3c5436] font-semibold"
                 : "border-transparent hover:text-[#2c2b29]"
             }`}
           >
-            Telemetry & Metrics
+            <Activity className="w-3.5 h-3.5 shrink-0" />
+            <span>Telemetry & Metrics</span>
           </button>
           <button
             onClick={() => setActiveTab("rbac")}
-            className={`py-2.5 px-3 border-b-2 transition cursor-pointer ${
+            className={`py-2.5 px-3 border-b-2 transition cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
               activeTab === "rbac"
                 ? "border-[#476340] text-[#3c5436] font-semibold"
                 : "border-transparent hover:text-[#2c2b29]"
             }`}
           >
-            RBAC Verification Suite
+            <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+            <span>RBAC Verification Suite</span>
           </button>
           <button
             onClick={() => setActiveTab("audit")}
-            className={`py-2.5 px-3 border-b-2 transition cursor-pointer ${
+            className={`py-2.5 px-3 border-b-2 transition cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
               activeTab === "audit"
                 ? "border-[#476340] text-[#3c5436] font-semibold"
                 : "border-transparent hover:text-[#2c2b29]"
             }`}
           >
-            Security Audit Logs ({auditLogs.length})
+            <Layers className="w-3.5 h-3.5 shrink-0" />
+            <span>Security Audit Logs ({auditLogs.length})</span>
           </button>
         </div>
 
@@ -529,12 +534,12 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
           {activeTab === "rbac" && (
             <div className="space-y-4">
               <div className="p-4 bg-[#ffffff] border border-[#ded7c8] rounded-xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="space-y-1">
                     <h4 className="text-xs font-semibold text-[#2c2b29]">
                       Automated Broken Access Control (OWASP A01) Verification
                     </h4>
-                    <p className="text-[11px] text-[#7c786e]">
+                    <p className="text-[11px] text-[#7c786e] max-w-xl">
                       Probe 1 presents a forged token plus every header that used to be
                       trusted. Probe 2 presents your real, verified ID token. Both pass
                       when the server's answer matches your actual role.
@@ -543,9 +548,11 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   <button
                     onClick={handleRunRbacTest}
                     disabled={isTestingRbac}
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#476340] hover:bg-[#3c5436] text-[#fdfbf7] text-xs font-semibold rounded-xl transition cursor-pointer disabled:opacity-50"
+                    aria-label="Run RBAC Security Audit"
+                    title="Run RBAC Security Audit"
+                    className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-[#476340] hover:bg-[#3c5436] text-[#fdfbf7] text-xs font-semibold rounded-xl transition cursor-pointer disabled:opacity-50 shrink-0 whitespace-nowrap self-start sm:self-center"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isTestingRbac ? "animate-spin" : ""}`} />
+                    <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${isTestingRbac ? "animate-spin" : ""}`} />
                     <span>Run RBAC Security Audit</span>
                   </button>
                 </div>
@@ -636,13 +643,13 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 </button>
               </div>
 
-              <div className="bg-[#ffffff] border border-[#ded7c8] rounded-xl overflow-hidden shadow-2xs max-h-72 overflow-y-auto">
+              <div className="bg-[#ffffff] border border-[#ded7c8] rounded-xl overflow-x-auto shadow-2xs max-h-72 overflow-y-auto">
                 {auditLogs.length === 0 ? (
                   <div className="p-6 text-center text-xs text-[#8a857a]">
                     No audit logs available or elevated permissions required.
                   </div>
                 ) : (
-                  <table className="w-full text-left text-xs border-collapse">
+                  <table className="w-full text-left text-xs border-collapse min-w-[560px]">
                     <thead className="bg-[#f5f1e8] text-[#635d52] font-semibold border-b border-[#ded7c8]">
                       <tr>
                         <th className="py-2 px-3">Timestamp</th>

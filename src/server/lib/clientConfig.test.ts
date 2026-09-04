@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildClientConfig, resolveDiscordWebhook } from "./clientConfig";
+import {
+  buildClientConfig,
+  buildFirebaseClientConfig,
+  resolveDiscordWebhook,
+} from "./clientConfig";
 
 describe("resolveDiscordWebhook", () => {
   it("prefers an explicit DISCORD_WEBHOOK_URL", () => {
@@ -61,6 +65,7 @@ describe("buildClientConfig", () => {
       projectId: "",
       appId: "",
       storageBucket: "",
+      apiKey: "",
       authDomain: "",
       messagingSenderId: "",
       firestoreDatabaseId: "reflect-ai-app",
@@ -105,5 +110,58 @@ describe("buildClientConfig", () => {
     } finally {
       delete process.env.VITE_FIREBASE_PROJECT_ID;
     }
+  });
+});
+
+describe("buildFirebaseClientConfig", () => {
+  it("builds the client configuration payload needed by the Firebase SDK", () => {
+    const config = buildFirebaseClientConfig({
+      VITE_FIREBASE_PROJECT_ID: "my-proj",
+      VITE_FIREBASE_API_KEY: "AIza-browser-key",
+      VITE_FIREBASE_APP_ID: "1:123:web:abc",
+      VITE_FIREBASE_STORAGE_BUCKET: "my-bucket.appspot.com",
+      VITE_FIREBASE_AUTH_DOMAIN: "auth.example.com",
+      VITE_FIREBASE_MESSAGING_SENDER_ID: "12345",
+      VITE_FIREBASE_DATABASE_ID: "custom-db",
+    });
+    expect(config).toEqual({
+      projectId: "my-proj",
+      appId: "1:123:web:abc",
+      storageBucket: "my-bucket.appspot.com",
+      apiKey: "AIza-browser-key",
+      authDomain: "auth.example.com",
+      messagingSenderId: "12345",
+      measurementId: "",
+      firestoreDatabaseId: "custom-db",
+    });
+  });
+
+  it("derives sensible defaults from project id when fields are omitted", () => {
+    const config = buildFirebaseClientConfig({
+      FIREBASE_PROJECT_ID: "proj-123",
+      FIREBASE_API_KEY: "my-api-key",
+    });
+    expect(config).toEqual({
+      projectId: "proj-123",
+      appId: "",
+      storageBucket: "proj-123.firebasestorage.app",
+      apiKey: "my-api-key",
+      authDomain: "proj-123.firebaseapp.com",
+      messagingSenderId: "",
+      measurementId: "",
+      firestoreDatabaseId: "reflect-ai-app",
+    });
+  });
+
+  it("never includes server-side secrets in the payload", () => {
+    const config = buildFirebaseClientConfig({
+      GEMINI_API_KEY: "secret-gemini",
+      MAPS_API_KEY: "secret-maps",
+      WEBHOOK_URL: "https://example.com/secret",
+    });
+    const serialized = JSON.stringify(config);
+    expect(serialized).not.toContain("secret-gemini");
+    expect(serialized).not.toContain("secret-maps");
+    expect(serialized).not.toContain("https://example.com/secret");
   });
 });

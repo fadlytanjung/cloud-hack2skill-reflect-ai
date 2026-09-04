@@ -1,5 +1,6 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { firebaseConfig } from "./firebaseConfig";
+import { firebaseConfig, resolveFirebaseConfig } from "./firebaseConfig";
 
 /**
  * `firebaseConfig` reads `import.meta.env` at module load, so these assertions
@@ -40,5 +41,26 @@ describe("firebaseConfig", () => {
     for (const forbidden of ["geminiApiKey", "mapsApiKey", "webhookUrl", "discordWebhookUrl"]) {
       expect(keys, forbidden).not.toContain(forbidden);
     }
+  });
+
+  it("allows window.__FIREBASE_CONFIG__ to hydrate configuration at runtime", () => {
+    const win = window as unknown as { __FIREBASE_CONFIG__?: Record<string, string> };
+    win.__FIREBASE_CONFIG__ = {
+      apiKey: "runtime-injected-key",
+      projectId: "runtime-proj",
+    };
+    const resolved = resolveFirebaseConfig();
+    expect(resolved.apiKey).toBe("runtime-injected-key");
+    expect(resolved.projectId).toBe("runtime-proj");
+    delete win.__FIREBASE_CONFIG__;
+  });
+
+  it("supports explicit customRuntime overrides", () => {
+    const custom = resolveFirebaseConfig({
+      apiKey: "custom-key",
+      firestoreDatabaseId: "custom-db",
+    });
+    expect(custom.apiKey).toBe("custom-key");
+    expect(custom.firestoreDatabaseId).toBe("custom-db");
   });
 });

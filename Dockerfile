@@ -43,6 +43,7 @@ ENV PORT=3000
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY package.json ./
+COPY firebase-applet-config.json* ./
 
 # The oven/bun images ship a non-root `bun` user; drop privileges to it.
 USER bun
