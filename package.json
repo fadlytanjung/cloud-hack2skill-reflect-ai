@@ -15,16 +15,20 @@
     "test:coverage": "vitest run --coverage",
     "test:security": "vitest run src/server/lib/security.test.ts src/server/lib/rbac.test.ts src/server/lib/rateLimit.test.ts test/api/admin.test.ts test/api/notifications.test.ts test/firestore-rules.test.ts",
     "hooks:install": "bash scripts/install-git-hooks.sh",
+    "role:set": "bash scripts/set-user-role.sh",
+    "role:list": "bash scripts/set-user-role.sh --list",
     "hosting:create-site": "bash scripts/deploy-hosting.sh",
     "deploy:hosting": "bash scripts/deploy-hosting.sh",
     "deploy:cloud-run": "bash scripts/deploy-cloud-run.sh",
+    "deploy:rules": "firebase deploy --only firestore:rules",
     "deploy:firebase": "firebase deploy",
     "purge:history": "bash scripts/purge-git-history.sh"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
     "dotenv": "^17.2.3",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "firebase-admin": "^14.3.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.14",

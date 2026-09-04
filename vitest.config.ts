@@ -46,6 +46,8 @@ export default defineConfig({
         'src/vite-env.d.ts',
         'src/types.ts',
         'src/server/devServer.ts',
+        // Firebase Admin SDK bootstrap: needs real credentials, nothing to assert.
+        'src/server/lib/firebaseAdminApp.ts',
       ],
       thresholds: {
         // A floor just under the current numbers (98 lines / 97 statements /

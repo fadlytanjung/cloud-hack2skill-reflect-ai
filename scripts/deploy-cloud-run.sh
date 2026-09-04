@@ -157,9 +157,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --platform managed \
   --region "$REGION" \
   --allow-unauthenticated \
-  --clear-env-vars \
   --set-env-vars="NODE_ENV=production,ENV_FILE=${SECRET_MOUNT_DIR}/.env" \
-  --clear-secrets \
   --set-secrets="${SECRET_MOUNT_DIR}/.env=${SECRET_NAME}:latest" \
   --port "$PORT" \
   --project "$PROJECT_ID"

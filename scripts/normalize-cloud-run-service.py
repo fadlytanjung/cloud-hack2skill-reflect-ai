@@ -60,6 +60,14 @@ def normalize(doc: dict, image: str, secret_mount_dir: str) -> list[str]:
     """Mutates `doc` in place. Returns a list of human-readable changes."""
     changes: list[str] = []
 
+    # Service-level label, separate from the revision template's copy. Left in
+    # place it claims AI Studio still manages a service we now deploy ourselves.
+    # `dev-tutorial` (the challenge label) and system labels are untouched.
+    service_labels = doc.setdefault("metadata", {}).setdefault("labels", {})
+    if service_labels.get("managed-by") == "google-ai-studio":
+        del service_labels["managed-by"]
+        changes.append("removed service label managed-by=google-ai-studio")
+
     template = doc.get("spec", {}).get("template", {})
     meta = template.setdefault("metadata", {})
     annotations = meta.setdefault("annotations", {})

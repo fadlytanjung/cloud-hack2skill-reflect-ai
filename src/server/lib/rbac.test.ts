@@ -1,19 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
 import { createAuditLogStore } from "./auditLog";
 import {
-  STATIC_ADMIN_TOKEN,
+  ADMIN_ROLE,
   createVerifyAdmin,
-  decodeJwtClaims,
+  decideAdminAccess,
   extractBearerToken,
-  isDesignatedAdminEmail,
   resolveAdminIdentity,
+  type VerifiedToken,
 } from "./rbac";
 
-/** Builds an unsigned JWT with the given payload, as the client would send. */
-function makeJwt(claims: Record<string, unknown>): string {
-  const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
-  const payload = Buffer.from(JSON.stringify(claims)).toString("base64url");
-  return `${header}.${payload}.signature`;
+function token(overrides: Partial<VerifiedToken> = {}): VerifiedToken {
+  return { uid: "uid-1", email: "someone@example.com", ...overrides };
+}
+
+/** Verifier that accepts one specific token string and rejects everything else. */
+function verifierFor(accepted: string, decoded: VerifiedToken = token()) {
+  return vi.fn(async (idToken: string) => (idToken === accepted ? decoded : null));
 }
 
 describe("extractBearerToken", () => {
@@ -40,174 +42,247 @@ describe("extractBearerToken", () => {
   });
 });
 
-describe("decodeJwtClaims", () => {
-  it("decodes a base64url payload segment", () => {
-    expect(decodeJwtClaims(makeJwt({ admin: true, email: "a@b.c" }))).toEqual({
-      admin: true,
-      email: "a@b.c",
-    });
+describe("decideAdminAccess", () => {
+  it("grants when the stored Firestore role is admin", () => {
+    // This is the intended path: role lives in users/{uid}, seeded out of band.
+    expect(decideAdminAccess({ claims: token(), storedRole: "admin" }).authorized).toBe(true);
   });
 
-  it("returns null for structurally invalid tokens", () => {
-    for (const token of ["", "onlyonepart", "a.b", "a..c", "a.!!!not-base64!!!.c"]) {
-      expect(decodeJwtClaims(token), token).toBeNull();
+  it("grants when the verified token carries an admin custom claim", () => {
+    expect(decideAdminAccess({ claims: token({ admin: true }), storedRole: null }).authorized).toBe(
+      true
+    );
+    expect(
+      decideAdminAccess({ claims: token({ role: "admin" }), storedRole: null }).authorized
+    ).toBe(true);
+  });
+
+  it("denies a standard user", () => {
+    for (const storedRole of [null, undefined, "user", "USER", "editor", ""]) {
+      const decision = decideAdminAccess({ claims: token(), storedRole: storedRole as any });
+      expect(decision.authorized, String(storedRole)).toBe(false);
     }
   });
 
-  it("returns null when the payload is valid base64 but not a JSON object", () => {
-    const asArray = `h.${Buffer.from(JSON.stringify([1, 2, 3])).toString("base64url")}.s`;
-    const asString = `h.${Buffer.from(JSON.stringify("nope")).toString("base64url")}.s`;
-    expect(decodeJwtClaims(asArray)).toBeNull();
-    expect(decodeJwtClaims(asString)).toBeNull();
+  it("denies a truthy-but-not-true admin claim", () => {
+    for (const admin of ["true", 1, {}, [], "yes"]) {
+      expect(
+        decideAdminAccess({ claims: token({ admin } as any), storedRole: null }).authorized,
+        JSON.stringify(admin)
+      ).toBe(false);
+    }
+  });
+
+  it("denies a role claim that is not exactly 'admin'", () => {
+    for (const role of ["Admin", "ADMIN", "superadmin", "admin ", "user"]) {
+      expect(
+        decideAdminAccess({ claims: token({ role } as any), storedRole: null }).authorized,
+        role
+      ).toBe(false);
+    }
+  });
+
+  it("ignores the email entirely — no address is privileged", () => {
+    // The previous design granted admin to a hardcoded address, which was
+    // inlined into the public bundle and trusted from a request header.
+    for (const email of [
+      "fadlysyah96@gmail.com",
+      "admin@reflectai.cloud",
+      "root@localhost",
+      null,
+    ]) {
+      expect(
+        decideAdminAccess({ claims: token({ email } as any), storedRole: null }).authorized,
+        String(email)
+      ).toBe(false);
+    }
+  });
+
+  it("reports which source granted access, for the audit trail", () => {
+    const stored = decideAdminAccess({ claims: token(), storedRole: "admin" });
+    expect(stored.authorized && stored.via).toBe("firestore-role");
+    const claim = decideAdminAccess({ claims: token({ admin: true }), storedRole: null });
+    expect(claim.authorized && claim.via).toBe("custom-claim");
+  });
+
+  it("carries the verified uid and email into the identity", () => {
+    const decision = decideAdminAccess({
+      claims: token({ uid: "uid-9", email: "ops@example.com" }),
+      storedRole: "admin",
+    });
+    expect(decision.authorized && decision.identity).toMatchObject({
+      uid: "uid-9",
+      email: "ops@example.com",
+      role: ADMIN_ROLE,
+    });
   });
 });
 
 describe("resolveAdminIdentity", () => {
-  it("grants access for the static admin token", () => {
-    const grant = resolveAdminIdentity({ authorization: `Bearer ${STATIC_ADMIN_TOKEN}` });
-    expect(grant.authorized).toBe(true);
-    if (!grant.authorized) return;
-    expect(grant.via).toBe("static-token");
-    expect(grant.identity).toMatchObject({ role: "admin", uid: "admin-master" });
+  const deps = (over: Partial<Parameters<typeof resolveAdminIdentity>[1]> = {}) => ({
+    verifyIdToken: verifierFor("good-token"),
+    getUserRole: vi.fn(async () => "admin" as const),
+    ...over,
   });
 
-  it("grants access for the x-admin-role simulation header", () => {
-    const grant = resolveAdminIdentity({ "x-admin-role": "admin" });
-    expect(grant.authorized).toBe(true);
-    if (grant.authorized) expect(grant.via).toBe("role-header");
-  });
-
-  it("grants access for a JWT carrying admin: true", () => {
-    const grant = resolveAdminIdentity({
-      authorization: `Bearer ${makeJwt({ admin: true, email: "ops@reflectai.cloud", sub: "uid-1" })}`,
-    });
-    expect(grant.authorized).toBe(true);
-    if (!grant.authorized) return;
-    expect(grant.via).toBe("jwt-claim");
-    expect(grant.actor).toBe("ops@reflectai.cloud");
-    expect(grant.identity.role).toBe("admin");
-  });
-
-  it("grants access for a JWT carrying role: admin", () => {
-    const grant = resolveAdminIdentity({ authorization: `Bearer ${makeJwt({ role: "admin" })}` });
+  it("grants an admin presenting a verified ID token", async () => {
+    const grant = await resolveAdminIdentity({ authorization: "Bearer good-token" }, deps());
     expect(grant.authorized).toBe(true);
   });
 
-  it("grants access for the designated admin email fadlysyah96@gmail.com via JWT claim", () => {
-    const grant = resolveAdminIdentity({
-      authorization: `Bearer ${makeJwt({ email: "fadlysyah96@gmail.com", sub: "fadly-uid" })}`,
-    });
-    expect(grant.authorized).toBe(true);
-    if (!grant.authorized) return;
-    expect(grant.via).toBe("jwt-claim");
-    expect(grant.actor).toBe("fadlysyah96@gmail.com");
-    expect(grant.identity.role).toBe("admin");
-  });
-
-  it("grants access for the designated admin email via x-admin-email header", () => {
-    const grant = resolveAdminIdentity({
-      "x-admin-email": "fadlysyah96@gmail.com",
-    });
-    expect(grant.authorized).toBe(true);
-    if (!grant.authorized) return;
-    expect(grant.via).toBe("role-header");
-    expect(grant.actor).toBe("fadlysyah96@gmail.com");
-    expect(grant.identity.role).toBe("admin");
-  });
-
-  it("denies access to regular new registrant emails without admin privilege", () => {
-    const grant = resolveAdminIdentity({
-      authorization: `Bearer ${makeJwt({ email: "newuser@example.com", role: "user", sub: "new-uid" })}`,
-    });
+  it("denies a request with no Authorization header, without any lookup", async () => {
+    const d = deps();
+    const grant = await resolveAdminIdentity({}, d);
     expect(grant.authorized).toBe(false);
+    expect(d.verifyIdToken).not.toHaveBeenCalled();
+    expect(d.getUserRole).not.toHaveBeenCalled();
   });
 
-  it("validates isDesignatedAdminEmail helper accuracy", () => {
-    expect(isDesignatedAdminEmail("fadlysyah96@gmail.com")).toBe(true);
-    expect(isDesignatedAdminEmail("FADLYSYAH96@GMAIL.COM")).toBe(true);
-    expect(isDesignatedAdminEmail("  fadlysyah96@gmail.com  ")).toBe(true);
-    expect(isDesignatedAdminEmail("other@gmail.com")).toBe(false);
-    expect(isDesignatedAdminEmail("")).toBe(false);
-    expect(isDesignatedAdminEmail(null)).toBe(false);
-    expect(isDesignatedAdminEmail(undefined)).toBe(false);
-  });
-
-  it("falls back to sub as the actor when no email claim is present", () => {
-    const grant = resolveAdminIdentity({
-      authorization: `Bearer ${makeJwt({ admin: true, sub: "uid-42" })}`,
-    });
-    expect(grant.authorized && grant.actor).toBe("uid-42");
-  });
-
-  it("denies an anonymous request", () => {
-    const grant = resolveAdminIdentity({});
+  it("denies a token the verifier rejects, and never looks up a role for it", async () => {
+    const d = deps();
+    const grant = await resolveAdminIdentity({ authorization: "Bearer forged" }, d);
     expect(grant.authorized).toBe(false);
-    expect(grant.authorized === false && grant.reason).toMatch(/Admin privileges required/);
+    expect(d.getUserRole).not.toHaveBeenCalled();
   });
 
-  it("denies a non-admin JWT — the core privilege-escalation guard", () => {
-    for (const claims of [
-      { admin: false },
-      { role: "user" },
-      { role: "USER" },
-      { admin: "true" }, // string, not boolean
-      { admin: 1 }, // truthy but not === true
-      { sub: "uid-1" },
-      {},
+  it("no longer honours the removed trusted headers", async () => {
+    // Each of these previously granted full admin on a public service.
+    for (const headers of [
+      { "x-admin-role": "admin" },
+      { "x-user-email": "fadlysyah96@gmail.com" },
+      { "x-admin-email": "fadlysyah96@gmail.com" },
+      { authorization: "Bearer admin-session-token" },
     ]) {
-      const grant = resolveAdminIdentity({
-        authorization: `Bearer ${makeJwt(claims)}`,
-      });
-      expect(grant.authorized, JSON.stringify(claims)).toBe(false);
+      const grant = await resolveAdminIdentity(headers as any, deps());
+      expect(grant.authorized, JSON.stringify(headers)).toBe(false);
     }
   });
 
-  it("denies a wrong static token and a near-miss role header", () => {
-    expect(resolveAdminIdentity({ authorization: "Bearer admin-session-toke" }).authorized).toBe(
-      false
+  it("denies an unsigned token whose payload merely claims admin", async () => {
+    // A real verifier rejects this; the point is that nothing else reads it.
+    const payload = Buffer.from(JSON.stringify({ admin: true })).toString("base64url");
+    const grant = await resolveAdminIdentity(
+      { authorization: `Bearer header.${payload}.sig` },
+      deps({ verifyIdToken: vi.fn(async () => null) })
     );
-    expect(resolveAdminIdentity({ authorization: "Bearer ADMIN-SESSION-TOKEN" }).authorized).toBe(
-      false
-    );
-    for (const role of ["Admin", "ADMIN", "user", "superadmin", ""]) {
-      expect(resolveAdminIdentity({ "x-admin-role": role }).authorized, role).toBe(false);
-    }
+    expect(grant.authorized).toBe(false);
   });
 
-  it("denies a garbage token without throwing", () => {
-    for (const token of ["...", "a.b.c.d.e", "%%%.%%%.%%%"]) {
-      expect(() => resolveAdminIdentity({ authorization: `Bearer ${token}` })).not.toThrow();
-      expect(resolveAdminIdentity({ authorization: `Bearer ${token}` }).authorized).toBe(false);
-    }
+  it("looks the role up by the uid from the verified token, not from the request", async () => {
+    const d = deps({ verifyIdToken: verifierFor("good-token", token({ uid: "verified-uid" })) });
+    await resolveAdminIdentity(
+      { authorization: "Bearer good-token", "x-user-email": "attacker@example.com" } as any,
+      d
+    );
+    expect(d.getUserRole).toHaveBeenCalledWith("verified-uid");
+  });
+
+  it("denies a verified non-admin user", async () => {
+    const grant = await resolveAdminIdentity(
+      { authorization: "Bearer good-token" },
+      deps({ getUserRole: vi.fn(async () => "user") })
+    );
+    expect(grant.authorized).toBe(false);
+  });
+
+  it("denies rather than throwing when the verifier itself fails", async () => {
+    const grant = await resolveAdminIdentity(
+      { authorization: "Bearer good-token" },
+      deps({ verifyIdToken: vi.fn(async () => { throw new Error("cert fetch failed"); }) })
+    );
+    expect(grant.authorized).toBe(false);
+    expect(grant.authorized === false && grant.reason).toMatch(/could not be verified/i);
+  });
+
+  it("still grants on a custom claim when the role lookup fails", async () => {
+    // Firestore being unreachable must not lock a claim-bearing admin out.
+    const grant = await resolveAdminIdentity(
+      { authorization: "Bearer good-token" },
+      deps({
+        verifyIdToken: verifierFor("good-token", token({ admin: true })),
+        getUserRole: vi.fn(async () => { throw new Error("firestore down"); }),
+      })
+    );
+    expect(grant.authorized).toBe(true);
+  });
+
+  it("denies when the role lookup fails and there is no claim", async () => {
+    const grant = await resolveAdminIdentity(
+      { authorization: "Bearer good-token" },
+      deps({ getUserRole: vi.fn(async () => { throw new Error("firestore down"); }) })
+    );
+    expect(grant.authorized).toBe(false);
+  });
+});
+
+describe("insecure development bypass", () => {
+  const deps = {
+    verifyIdToken: vi.fn(async () => null),
+    getUserRole: vi.fn(async () => null),
+  };
+
+  it("is off unless explicitly enabled", async () => {
+    expect((await resolveAdminIdentity({ "x-admin-role": "admin" } as any, deps)).authorized).toBe(
+      false
+    );
+  });
+
+  it("grants on the dev header only when explicitly enabled", async () => {
+    const grant = await resolveAdminIdentity({ "x-admin-role": "admin" } as any, {
+      ...deps,
+      allowInsecureAdmin: true,
+    });
+    expect(grant.authorized).toBe(true);
+    expect(grant.authorized && grant.via).toBe("insecure-dev-bypass");
+  });
+
+  it("still denies without the dev header even when enabled", async () => {
+    expect(
+      (await resolveAdminIdentity({}, { ...deps, allowInsecureAdmin: true })).authorized
+    ).toBe(false);
   });
 });
 
 describe("createVerifyAdmin middleware", () => {
-  function invoke(headers: Record<string, string>) {
+  async function invoke(
+    headers: Record<string, string>,
+    over: Parameters<typeof createVerifyAdmin>[0] | null = null
+  ) {
     const audit = createAuditLogStore();
-    const verifyAdmin = createVerifyAdmin(audit);
+    const verifyAdmin = createVerifyAdmin(
+      over ?? {
+        audit,
+        verifyIdToken: verifierFor("good-token"),
+        getUserRole: async () => "admin",
+      }
+    );
     const req = { headers, method: "GET", path: "/api/admin/metrics" } as any;
     const res = { status: vi.fn().mockReturnThis(), json: vi.fn().mockReturnThis() } as any;
     const next = vi.fn();
-    verifyAdmin(req, res, next);
+    await verifyAdmin(req, res, next);
     return { audit, req, res, next };
   }
 
-  it("calls next and attaches the identity when authorized", () => {
-    const { req, res, next, audit } = invoke({ authorization: `Bearer ${STATIC_ADMIN_TOKEN}` });
+  it("calls next and attaches the verified identity when authorized", async () => {
+    const { req, res, next } = await invoke({ authorization: "Bearer good-token" });
     expect(next).toHaveBeenCalledOnce();
     expect(res.status).not.toHaveBeenCalled();
-    expect(req.user).toMatchObject({ role: "admin" });
-    expect(audit.list()[0]).toMatchObject({ action: "RBAC_ACCESS_GRANTED", status: "success" });
+    expect(req.user).toMatchObject({ role: ADMIN_ROLE, uid: "uid-1" });
   });
 
-  it("responds 403 and records a warning when denied", () => {
-    const { res, next, audit } = invoke({});
+  it("audits a grant with the verified actor", async () => {
+    const { audit } = await invoke({ authorization: "Bearer good-token" });
+    expect(audit.list()[0]).toMatchObject({
+      action: "RBAC_ACCESS_GRANTED",
+      actor: "someone@example.com",
+      status: "success",
+    });
+  });
+
+  it("responds 403 and audits a warning when denied", async () => {
+    const { res, next, audit } = await invoke({});
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith({
-      error: "Access denied: Admin privileges required.",
-    });
     expect(audit.list()[0]).toMatchObject({
       action: "RBAC_ACCESS_DENIED",
       actor: "unauthorized_caller",
@@ -215,8 +290,16 @@ describe("createVerifyAdmin middleware", () => {
     });
   });
 
-  it("never leaks the identity onto the request when denied", () => {
-    const { req } = invoke({ authorization: "Bearer not-the-token" });
+  it("never attaches an identity when denied", async () => {
+    const { req } = await invoke({ authorization: "Bearer forged" });
     expect(req.user).toBeUndefined();
+  });
+
+  it("does not leak why the token failed", async () => {
+    // A precise reason tells an attacker whether a uid exists.
+    const { res } = await invoke({ authorization: "Bearer forged" });
+    expect(res.json).toHaveBeenCalledWith({
+      error: "Access denied: Admin privileges required.",
+    });
   });
 });

@@ -287,6 +287,14 @@ export async function logoutUser(): Promise<void> {
 /**
  * Update a user's role in Cloud Firestore (/users/{userId}) and local state
  */
+/**
+ * Local-preview role toggle.
+ *
+ * A real account's role cannot be changed from the browser: Firestore rules
+ * forbid writing `users/{uid}.role`. Use `scripts/set-user-role.sh` (or the
+ * Admin SDK) instead. This exists only so the sandboxed preview session can
+ * demonstrate the admin UI.
+ */
 export async function updateUserRoleInFirestore(uid: string, role: "admin" | "user"): Promise<void> {
   if (!uid) return;
 
@@ -303,30 +311,18 @@ export async function updateUserRoleInFirestore(uid: string, role: "admin" | "us
     return;
   }
 
-  try {
-    const userDocRef = doc(db, "users", uid);
-    await setDoc(userDocRef, { role, updatedAt: Date.now() }, { merge: true });
-    console.log(`[Firestore] Successfully persisted role '${role}' to /users/${uid}`);
-  } catch (err) {
-    console.warn("[Firestore] Failed to update user role in database:", err);
-  }
+  console.warn(
+    `[RBAC] Refusing to write role '${role}' for ${uid} from the browser. ` +
+      "Roles are predefined data -- run scripts/set-user-role.sh instead."
+  );
 }
 
 /**
- * Master administrator email address designated for manual admin assignment.
- * All other registrants receive basic (standard user) access by default.
- */
-export const DESIGNATED_ADMIN_EMAIL = "fadlysyah96@gmail.com";
-
-export function isDesignatedAdmin(email?: string | null): boolean {
-  if (!email || typeof email !== "string") return false;
-  return email.toLowerCase().trim() === DESIGNATED_ADMIN_EMAIL.toLowerCase();
-}
-
-/**
- * Synchronize user profile into Cloud Firestore /users/{userId} on every authenticated session.
- * Automatically ensures fadlysyah96@gmail.com receives the admin role, while all other
- * new registrants receive basic 'user' access by default unless elevated.
+ * Synchronize the user profile into /users/{userId} on every authenticated session.
+ *
+ * This never writes `role`. Roles are predefined data, granted out of band with
+ * scripts/set-user-role.sh, and Firestore rules reject a client write to that
+ * field — otherwise an account could assign itself the role that governs it.
  */
 export async function syncUserProfile(profile: UserProfile): Promise<void> {
   if (!profile || !profile.uid || profile.uid.startsWith("preview-user")) {
@@ -335,40 +331,57 @@ export async function syncUserProfile(profile: UserProfile): Promise<void> {
 
   try {
     const userDocRef = doc(db, "users", profile.uid);
-    let resolvedRole: "admin" | "user" = "user";
-
-    if (isDesignatedAdmin(profile.email)) {
-      resolvedRole = "admin";
-    } else if (profile.role === "admin") {
-      resolvedRole = "admin";
-    } else {
-      // Attempt to load existing role from Firestore document
-      try {
-        const docSnap = await getDoc(userDocRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          if (data?.role === "admin") {
-            resolvedRole = "admin";
-          }
-        }
-      } catch {
-        // Non-blocking: proceed with profile sync
-      }
-    }
-
+    // `role` is deliberately absent. It is predefined data, seeded with
+    // scripts/set-user-role.sh, and Firestore rules reject any client write to
+    // it -- otherwise an account could grant itself the role that governs it.
     const payload = sanitizeForFirestore({
       uid: profile.uid,
       email: profile.email || null,
       displayName: profile.displayName || "Reflector",
       photoURL: profile.photoURL || null,
-      role: resolvedRole,
       lastLoginAt: Date.now(),
     });
     await setDoc(userDocRef, payload, { merge: true });
-    console.log(`[Firestore] Synchronized user record to Cloud Firestore /users/${profile.uid} (role: ${resolvedRole})`);
   } catch (err: any) {
     console.warn("[Firestore] User profile sync error:", err?.code || err?.message || err);
   }
+}
+
+/**
+ * Reads the predefined role for a user from Cloud Firestore.
+ *
+ * This is a hint for the UI only. It decides which controls to show; it grants
+ * nothing. Every privileged action is re-checked server-side against a verified
+ * ID token, so a tampered client sees admin buttons that return 403.
+ */
+export async function fetchUserRole(uid: string): Promise<"admin" | "user"> {
+  if (!uid || uid.startsWith("preview-user")) return "user";
+  try {
+    const snapshot = await getDoc(doc(db, "users", uid));
+    return snapshot.exists() && snapshot.data()?.role === "admin" ? "admin" : "user";
+  } catch (err: any) {
+    console.warn("[Firestore] Role lookup failed:", err?.code || err?.message || err);
+    return "user";
+  }
+}
+
+/**
+ * The current user's Firebase ID token, for the Authorization header on
+ * /api/admin/* calls. The server verifies it cryptographically.
+ */
+export async function getIdTokenForApi(): Promise<string | null> {
+  try {
+    return (await auth.currentUser?.getIdToken()) ?? null;
+  } catch (err: any) {
+    console.warn("[Auth] Could not obtain an ID token:", err?.code || err?.message || err);
+    return null;
+  }
+}
+
+/** Authorization header for the admin API, or an empty object when signed out. */
+export async function adminAuthHeaders(): Promise<Record<string, string>> {
+  const token = await getIdTokenForApi();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 /**
@@ -393,36 +406,40 @@ export function onAuthUserChanged(callback: (user: UserProfile | null) => void) 
         localStorage.removeItem(PREVIEW_USER_KEY);
       }
 
-      let resolvedRole: "admin" | "user" = "user";
-      if (isDesignatedAdmin(firebaseUser.email)) {
-        resolvedRole = "admin";
-      }
-
+      // Everyone starts as a standard user. The role is predefined data in
+      // Firestore; no email address is privileged, and nothing here grants
+      // access -- the server re-checks every admin call against a verified token.
       const profile: UserProfile = {
         uid: firebaseUser.uid,
         email: firebaseUser.email,
         displayName: firebaseUser.displayName || (firebaseUser.isAnonymous ? "Guest Explorer" : "Reflector"),
         photoURL: firebaseUser.photoURL,
-        ...(resolvedRole === "admin" ? { role: "admin" } : {}),
+        role: "user",
       };
 
       callback(profile);
 
-      // Asynchronously sync profile to Firestore and check claims
-      syncUserProfile(profile).catch((e) => {
-        console.warn("[Auth] Profile sync notice:", e);
-      });
-
-      firebaseUser.getIdTokenResult?.().then((tokenResult) => {
-        if (
-          tokenResult?.claims?.admin === true ||
-          tokenResult?.claims?.role === "admin" ||
-          isDesignatedAdmin(firebaseUser.email)
-        ) {
-          resolvedRole = "admin";
-          callback({ ...profile, role: resolvedRole });
+      // Write the profile (never the role), then read the role back and, if the
+      // user is an administrator, re-emit so the UI reveals the admin controls.
+      void (async () => {
+        try {
+          await syncUserProfile(profile);
+        } catch (e) {
+          console.warn("[Auth] Profile sync notice:", e);
         }
-      }).catch(() => {});
+
+        const claimAdmin = await firebaseUser
+          .getIdTokenResult?.()
+          .then((r) => r?.claims?.admin === true || r?.claims?.role === "admin")
+          .catch(() => false);
+
+        const role =
+          claimAdmin || (await fetchUserRole(firebaseUser.uid)) === "admin" ? "admin" : "user";
+
+        if (role === "admin") {
+          callback({ ...profile, role });
+        }
+      })();
     } else {
       if (typeof localStorage !== "undefined") {
         const preview = localStorage.getItem(PREVIEW_USER_KEY);

@@ -123,4 +123,78 @@ describe("AuthLanding", () => {
     await userEvent.click(screen.getByRole("button", { name: /Continue with Google/ }));
     await waitFor(() => expect(screen.queryByText("first failure")).not.toBeInTheDocument());
   });
+
+  describe("popup cancellation", () => {
+    // A closed popup is not a failure the user needs to see in red; it gets a
+    // notice with a route out of the iframe instead.
+    const CANCELLED = [
+      { isCancelled: true },
+      { code: "auth/popup-closed-by-user" },
+      { code: "auth/cancelled-popup-request" },
+    ];
+
+    it("shows a recoverable notice, not an error, when the popup is closed", async () => {
+      for (const err of CANCELLED) {
+        signInWithGoogle.mockRejectedValueOnce(err);
+        const { unmount } = render(<AuthLanding />);
+        await userEvent.click(screen.getByRole("button", { name: /Continue with Google/ }));
+
+        expect(
+          await screen.findByText(/Sign-in window was closed/),
+          JSON.stringify(err)
+        ).toBeInTheDocument();
+        expect(screen.queryByText(/Failed to sign in/)).not.toBeInTheDocument();
+        unmount();
+      }
+    });
+
+    it("lets the user dismiss the notice", async () => {
+      signInWithGoogle.mockRejectedValueOnce({ code: "auth/popup-closed-by-user" });
+      render(<AuthLanding />);
+      await userEvent.click(screen.getByRole("button", { name: /Continue with Google/ }));
+      await screen.findByText(/Sign-in window was closed/);
+
+      await userEvent.click(screen.getByTitle("Dismiss"));
+      expect(screen.queryByText(/Sign-in window was closed/)).not.toBeInTheDocument();
+    });
+
+    it("lets the user dismiss a hard error too", async () => {
+      signInWithGoogle.mockRejectedValueOnce(new Error("popup blocked"));
+      render(<AuthLanding />);
+      await userEvent.click(screen.getByRole("button", { name: /Continue with Google/ }));
+      await screen.findByText("popup blocked");
+
+      await userEvent.click(screen.getByTitle("Dismiss"));
+      expect(screen.queryByText("popup blocked")).not.toBeInTheDocument();
+    });
+
+    it("offers a standalone window only when running inside an iframe", async () => {
+      signInWithGoogle.mockRejectedValue({ code: "auth/popup-closed-by-user" });
+
+      // Top-level: no escape hatch needed.
+      const { unmount } = render(<AuthLanding />);
+      await userEvent.click(screen.getByRole("button", { name: /Continue with Google/ }));
+      await screen.findByText(/Sign-in window was closed/);
+      expect(
+        screen.queryByRole("button", { name: /Open in Standalone Window/ })
+      ).not.toBeInTheDocument();
+      unmount();
+
+      // Embedded: window.top !== window.self, so the browser may block popups.
+      const originalTop = window.top;
+      Object.defineProperty(window, "top", { value: {}, configurable: true });
+      const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+      try {
+        render(<AuthLanding />);
+        await userEvent.click(screen.getByRole("button", { name: /Continue with Google/ }));
+        await screen.findByText(/Sign-in window was closed/);
+
+        await userEvent.click(screen.getByRole("button", { name: /Open in Standalone Window/ }));
+        expect(openSpy).toHaveBeenCalledWith(window.location.href, "_blank");
+      } finally {
+        openSpy.mockRestore();
+        Object.defineProperty(window, "top", { value: originalTop, configurable: true });
+      }
+    });
+  });
 });

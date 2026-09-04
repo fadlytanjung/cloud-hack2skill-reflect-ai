@@ -313,14 +313,46 @@ describe("App — admin hub", () => {
     expect(document.getElementById("admin-dashboard-dialog")).toBeNull();
   });
 
-  it("elevates the session role, which the navbar then reflects", async () => {
+  it("offers a standard user no way to elevate themselves", async () => {
+    // The UI must not be able to disagree with the server, which refuses this
+    // account's admin calls with 403.
     await signIn();
     await userEvent.click(await screen.findByRole("button", { name: "RBAC Hub" }));
-    await userEvent.click(screen.getByRole("button", { name: /Elevate to Admin/ }));
+    await screen.findByText("You have standard access");
 
+    for (const name of [/Elevate to Admin/, /Enable Admin Mode/]) {
+      expect(screen.queryByRole("button", { name }), String(name)).not.toBeInTheDocument();
+    }
+    // The navbar still reports standard access.
+    expect(screen.getByRole("button", { name: "RBAC Hub" })).toBeInTheDocument();
+  });
+
+  it("ignores a role change for a real account, even if one is requested", async () => {
+    // Defence in depth: the control is gone from the UI, and the handler refuses
+    // anyway, so a re-added button cannot make the UI disagree with the server.
+    await signIn();
+    await userEvent.click(await screen.findByRole("button", { name: "RBAC Hub" }));
+    await screen.findByText("You have standard access");
+
+    // The hub is still the standard-access one; nothing elevated.
+    expect(screen.getByRole("button", { name: "RBAC Hub" })).toBeInTheDocument();
+    expect(screen.queryByText("Administrator")).not.toBeInTheDocument();
+  });
+
+  it("lets a sandboxed preview session switch to the demo admin view", async () => {
+    await signIn({ ...USER, uid: "preview-user-abc" });
+    await userEvent.click(await screen.findByRole("button", { name: "RBAC Hub" }));
+    await userEvent.click(screen.getByRole("button", { name: /Demo: admin view/ }));
+
+    // A preview session has no Firebase account, so the local flip is honest.
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Admin Hub" })).toBeInTheDocument()
+      expect(screen.getByText("Demo Admin (sandboxed)")).toBeInTheDocument()
     );
+  });
+
+  it("shows the admin hub for a user whose Firestore role is admin", async () => {
+    await signIn({ ...USER, role: "admin" });
+    expect(await screen.findByRole("button", { name: "Admin Hub" })).toBeInTheDocument();
   });
 });
 

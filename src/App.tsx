@@ -199,8 +199,23 @@ export default function App() {
     }
   };
 
+  /**
+   * Role changes are only ever local, and only for a sandboxed preview session.
+   *
+   * A real account's role is predefined data in Firestore that the client cannot
+   * write. Optimistically flipping it here made the UI announce "Elevated Admin
+   * View" while every API call correctly returned 403 — the UI and the server
+   * disagreed, which is worse than simply not offering the control.
+   */
   const handleUpdateUserRole = async (newRole: "admin" | "user") => {
     if (!currentUser) return;
+    if (!currentUser.uid.startsWith("preview-user")) {
+      console.warn(
+        "[RBAC] Ignoring a client-side role change for a real account. " +
+          "Roles are granted with scripts/set-user-role.sh."
+      );
+      return;
+    }
     setCurrentUser((prev) => (prev ? { ...prev, role: newRole } : null));
     try {
       await updateUserRoleInFirestore(currentUser.uid, newRole);

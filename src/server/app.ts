@@ -66,7 +66,9 @@ import {
   sanitizeNotificationPayload,
   validateCoordinates,
 } from "./lib/security";
-import { createVerifyAdmin } from "./lib/rbac";
+import { createVerifyAdmin, type RoleLookup, type TokenVerifier } from "./lib/rbac";
+import { createRoleLookup, createTokenVerifier } from "./lib/firebaseAdmin";
+import { createAdminApp } from "./lib/firebaseAdminApp";
 
 export interface AppDependencies {
   env?: EnvMap;
@@ -79,6 +81,10 @@ export interface AppDependencies {
   now?: () => number;
   /** Body size limit for JSON requests. */
   jsonLimit?: string;
+  /** Verifies a Firebase ID token. Defaults to the Admin SDK. */
+  verifyIdToken?: TokenVerifier;
+  /** Reads the predefined role from Firestore `users/{uid}`. */
+  getUserRole?: RoleLookup;
 }
 
 export interface ReflectApp {
@@ -120,7 +126,30 @@ export function createApp(deps: AppDependencies = {}): ReflectApp {
   app.use(express.json({ limit: deps.jsonLimit ?? "2mb" }));
   app.use(express.urlencoded({ extended: true }));
 
-  const verifyAdmin = createVerifyAdmin(audit);
+  // Admin identity is proved by a verified Firebase ID token; the role itself is
+  // predefined data in Firestore `users/{uid}`. Both are injectable so the API
+  // tests never need credentials.
+  const adminApp = deps.verifyIdToken && deps.getUserRole ? null : createAdminApp(env);
+  const verifyIdToken = deps.verifyIdToken ?? createTokenVerifier(adminApp!);
+  const getUserRole = deps.getUserRole ?? createRoleLookup(adminApp!);
+
+  // Local-development bypass, off unless explicitly asked for and never in
+  // production. It accepts `x-admin-role: admin` with no credential at all.
+  const allowInsecureAdmin =
+    env.ALLOW_INSECURE_ADMIN === "1" && env.NODE_ENV !== "production";
+  if (allowInsecureAdmin) {
+    console.warn(
+      "[RBAC] ALLOW_INSECURE_ADMIN=1 — /api/admin/* accepts an unauthenticated " +
+        "`x-admin-role: admin` header. Development only."
+    );
+  }
+
+  const verifyAdmin = createVerifyAdmin({
+    audit,
+    verifyIdToken,
+    getUserRole,
+    allowInsecureAdmin,
+  });
 
   // ==========================================
   // DISCOVERY & HEALTH
@@ -367,7 +396,7 @@ export function createApp(deps: AppDependencies = {}): ReflectApp {
       systemUptimeSeconds: Math.floor(process.uptime()),
       databaseStatus: "connected",
       securityRulesEnforced: true,
-      rbacEngine: "active",
+      rbacEngine: "firebase-id-token + firestore-role",
       threatZonesAudited: 5,
     });
   });

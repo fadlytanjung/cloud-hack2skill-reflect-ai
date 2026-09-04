@@ -69,40 +69,68 @@ gcloud secrets add-iam-policy-binding reflect-ai-env \
 
 ---
 
-## 4. Database Security Configuration (Cloud Firestore)
+## 4. Database Security & Administrator Roles (Cloud Firestore)
 
-Deploy the following security rules to enforce owner isolation and RBAC:
+### Administrator roles are predefined data
 
-```javascript
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    // User-owned entries and reflections
-    match /users/{userId}/interactions/{interactionId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-
-    // Role-Based Access Control (Admin Dashboard)
-    function isAdmin() {
-      return request.auth != null && 
-             (request.auth.token.admin == true || 
-              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
-    }
-
-    match /admin/{document=**} {
-      allow read, write: if isAdmin();
-    }
-  }
-}
-```
-
-To deploy rules to both `(default)` and `reflect-ai-app` databases via Firebase CLI:
+There is no privileged email address in the code and no admin header. A user is
+an administrator when the Firestore document `users/{uid}` carries
+`role: "admin"` in the `reflect-ai-app` database. Everyone else is a standard
+user.
 
 ```bash
-firebase deploy --only firestore:rules --project <YOUR_GCP_PROJECT_ID>
+bun run role:list                                     # who is an admin
+bash scripts/set-user-role.sh <email> admin           # grant
+bash scripts/set-user-role.sh <email> user            # revoke
+bash scripts/set-user-role.sh --uid <uid> admin       # when you know the uid
 ```
 
----
+The account must sign in once first — the uid is created by Firebase Auth, not by
+the script. The change is live on the next request; the server reads the role on
+every `/api/admin/*` call.
+
+The script writes through the Firestore REST API with a `gcloud` access token,
+which bypasses security rules the same way the Admin SDK does. That is
+deliberate: **rules forbid any client from writing `role`.**
+
+### How the guard works
+
+1. The browser sends the user's **Firebase ID token** as
+   `Authorization: Bearer <token>`.
+2. The server verifies it with the Firebase Admin SDK
+   (`src/server/lib/firebaseAdmin.ts`). On Cloud Run this uses Application
+   Default Credentials from the runtime service account — no key file.
+3. The role is read from `users/{uid}` using the **uid inside the verified
+   token**, so a caller cannot ask about someone else's privileges.
+4. A custom claim (`admin: true`) is also honoured, so an admin is not locked out
+   if Firestore is briefly unreachable.
+
+The client-side `role` is a UI hint only — it chooses which controls to render
+and grants nothing. A tampered client sees admin buttons that return 403.
+
+For local development without credentials, `ALLOW_INSECURE_ADMIN=1` accepts
+`x-admin-role: admin` with no token. It is ignored when `NODE_ENV=production`
+and logs a warning while active.
+
+### Security rules
+
+`firestore.rules` enforces two things:
+
+- **Entries are owner-bound.** `users/{uid}/interactions/*` is readable and
+  writable only by that uid (or an admin).
+- **A user cannot grant themselves a role.** `create` rejects any payload
+  containing `role`; `update` rejects any change to it. Without this, an account
+  could write `role: "admin"` to its own document — the exact field the
+  `isAdmin()` rule reads.
+
+Deploy rules after changing them:
+
+```bash
+firebase deploy --only firestore:rules
+```
+
+`test/firestore-rules.test.ts` guards this statically in CI and in the pre-push
+hook, so a relaxed rule fails the build.
 
 ## 5. Cloud Run Deployment
 

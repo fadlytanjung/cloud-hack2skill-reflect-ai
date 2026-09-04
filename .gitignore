@@ -43,6 +43,10 @@ firebase-debug.log*
 .antigravity/
 .agents/local/
 
+# Python bytecode from scripts/
+__pycache__/
+*.py[cod]
+
 # OS and IDE files
 .DS_Store
 Thumbs.db

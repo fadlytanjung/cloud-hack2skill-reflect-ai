@@ -29,11 +29,26 @@ path segment is a bearer credential. `describeWebhookTarget` exists for this.
 
 ## Access control
 
+Administrator status is predefined data: `users/{uid}.role == 'admin'` in
+Firestore, seeded with `scripts/set-user-role.sh`.
+
 - Every `/api/admin/*` route is mounted behind `verifyAdmin`.
+- **Identity comes from a verified Firebase ID token, never a request header.**
+  The role is looked up by the uid *inside* that token.
+- **Never trust a header for privilege.** `x-admin-role`, `x-admin-email` and
+  `x-user-email` were each a working escalation path on a public service. So was
+  a shared static token, reading an unverified JWT, and privileging a hardcoded
+  email address (which also shipped in the public bundle).
+- **Clients cannot write `users/{uid}.role`** — `firestore.rules` denies it on
+  create and update. Otherwise an account grants itself the role that governs it.
 - Every grant and every denial is written to the audit log.
-- A denied response body carries `{ error }` and nothing else.
-- Firestore rules are owner-bound: `request.auth.uid == userId`. A user document
-  is readable by its owner or an admin, but writable **only** by its owner.
+- A denied response body carries `{ error }` and nothing else, with the same
+  message whether the token was absent, forged, or simply not an admin's.
+- Firestore entries are owner-bound: `request.auth.uid == userId`.
+- The client-side `role` is a UI hint. It never grants anything.
+
+`ALLOW_INSECURE_ADMIN=1` bypasses authentication for local development only; it
+is ignored in production.
 
 ## Untrusted input
 

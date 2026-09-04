@@ -42,6 +42,17 @@ export interface TestAppOptions {
   /** Responses for outbound fetches, matched in call order. */
   fetchResponses?: Array<{ ok?: boolean; status?: number; json?: unknown } | Error>;
   rateLimit?: { max: number; windowMs: number };
+  /**
+   * ID tokens the stub verifier accepts, mapped to the uid they resolve to.
+   * Anything else is rejected, exactly as an invalid token would be.
+   */
+  validTokens?: Record<string, { uid: string; email?: string }>;
+  /** Predefined Firestore roles, keyed by uid. */
+  userRoles?: Record<string, string>;
+  /** Make the verifier throw, simulating an Admin SDK outage. */
+  verifierThrows?: boolean;
+  /** Make the role lookup throw, simulating Firestore being unreachable. */
+  roleLookupThrows?: boolean;
 }
 
 function stubGenAI(options: TestAppOptions): GenAIClientLike {
@@ -112,6 +123,18 @@ export function createTestApp(options: TestAppOptions = {}): TestHarness {
           throw new Error("GEMINI_API_KEY environment variable is not configured.");
         }
       : () => stubGenAI(options),
+
+    // Stand-ins for Firebase: no credentials, no network. A token is valid only
+    // if the test declared it, and a role only if the test seeded it.
+    async verifyIdToken(idToken: string) {
+      if (options.verifierThrows) throw new Error("Admin SDK unavailable");
+      const match = (options.validTokens ?? {})[idToken];
+      return match ? { uid: match.uid, email: match.email ?? null } : null;
+    },
+    async getUserRole(uid: string) {
+      if (options.roleLookupThrows) throw new Error("Firestore unavailable");
+      return (options.userRoles ?? {})[uid] ?? null;
+    },
   };
 
   const built = createApp(deps);
@@ -126,5 +149,25 @@ export function createTestApp(options: TestAppOptions = {}): TestHarness {
   };
 }
 
-/** Authorization header that satisfies the admin guard. */
-export const ADMIN_AUTH = { Authorization: "Bearer admin-session-token" };
+/** A verified-token/role pair that satisfies the admin guard. */
+export const ADMIN_UID = "admin-uid";
+export const ADMIN_EMAIL = "owner@example.com";
+export const ADMIN_ID_TOKEN = "valid-admin-id-token";
+
+/** Harness options granting `ADMIN_ID_TOKEN` admin rights. */
+export const ADMIN_FIXTURE: Pick<TestAppOptions, "validTokens" | "userRoles"> = {
+  validTokens: { [ADMIN_ID_TOKEN]: { uid: ADMIN_UID, email: ADMIN_EMAIL } },
+  userRoles: { [ADMIN_UID]: "admin" },
+};
+
+/** Authorization header carrying a token the harness will verify as an admin. */
+export const ADMIN_AUTH = { Authorization: `Bearer ${ADMIN_ID_TOKEN}` };
+
+/** A verified but non-admin caller. */
+export const USER_UID = "plain-uid";
+export const USER_ID_TOKEN = "valid-user-id-token";
+export const USER_FIXTURE: Pick<TestAppOptions, "validTokens" | "userRoles"> = {
+  validTokens: { [USER_ID_TOKEN]: { uid: USER_UID, email: "user@example.com" } },
+  userRoles: { [USER_UID]: "user" },
+};
+export const USER_AUTH = { Authorization: `Bearer ${USER_ID_TOKEN}` };

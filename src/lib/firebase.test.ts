@@ -9,25 +9,36 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const setDoc = vi.fn();
 const deleteDoc = vi.fn();
 const onSnapshot = vi.fn();
+const getDoc = vi.fn();
+const getDocFromServer = vi.fn();
 
 vi.mock("firebase/firestore", () => ({
   getFirestore: vi.fn(() => ({ __db: true })),
   collection: vi.fn((...path: unknown[]) => ({ __collection: path.slice(1).join("/") })),
   doc: vi.fn((...path: unknown[]) => ({ __doc: path.slice(1).join("/") })),
   setDoc: (...args: unknown[]) => setDoc(...args),
+  getDoc: (...args: unknown[]) => getDoc(...args),
+  getDocFromServer: (...args: unknown[]) => getDocFromServer(...args),
   deleteDoc: (...args: unknown[]) => deleteDoc(...args),
   query: vi.fn((ref: unknown) => ref),
   orderBy: vi.fn(() => ({ __orderBy: true })),
   onSnapshot: (...args: unknown[]) => onSnapshot(...args),
 }));
 
+/** Mutable stand-in for the Firebase Auth instance. */
+const authStub: { currentUser: { getIdToken: () => Promise<string> } | null } = {
+  currentUser: null,
+};
+
 const signInWithPopup = vi.fn();
 const signInAnonymously = vi.fn();
 const signOut = vi.fn();
 const onAuthStateChanged = vi.fn();
 
+const getIdToken = vi.fn();
+
 vi.mock("firebase/auth", () => ({
-  getAuth: vi.fn(() => ({ __auth: true })),
+  getAuth: vi.fn(() => authStub),
   GoogleAuthProvider: class {
     setCustomParameters = vi.fn();
   },
@@ -38,9 +49,15 @@ vi.mock("firebase/auth", () => ({
 }));
 
 const {
-  DESIGNATED_ADMIN_EMAIL,
+  OperationType,
+  adminAuthHeaders,
+  clearLocalEntries,
+  handleFirestoreError,
+  signInAsDemoUser,
+  testConnection,
   deleteJournalEntry,
-  isDesignatedAdmin,
+  fetchUserRole,
+  getIdTokenForApi,
   isReferrerBlocked,
   logoutUser,
   onAuthUserChanged,
@@ -51,6 +68,7 @@ const {
   subscribeToUserInteractions,
   syncOfflineEntries,
   syncUserProfile,
+  updateUserRoleInFirestore,
 } = await import("./firebase");
 
 const LOCAL_ENTRIES_KEY = "reflect_ai_local_entries";
@@ -74,10 +92,14 @@ beforeEach(() => {
   setDoc.mockReset().mockResolvedValue(undefined);
   deleteDoc.mockReset().mockResolvedValue(undefined);
   onSnapshot.mockReset();
+  getDoc.mockReset().mockResolvedValue({ exists: () => false, data: () => undefined });
+  getDocFromServer.mockReset().mockResolvedValue({ exists: () => true });
   signInWithPopup.mockReset();
   signInAnonymously.mockReset();
   signOut.mockReset().mockResolvedValue(undefined);
   onAuthStateChanged.mockReset();
+  getIdToken.mockReset().mockResolvedValue("id-token-abc");
+  authStub.currentUser = null;
 });
 
 describe("sanitizeForFirestore (zero-crash payload hygiene)", () => {
@@ -443,6 +465,17 @@ describe("syncUserProfile", () => {
     expect(typeof (payload as any).lastLoginAt).toBe("number");
   });
 
+  it("never writes the role field — Firestore rules reject it, and it governs access", async () => {
+    await syncUserProfile({
+      uid: "uid-1",
+      email: "a@b.c",
+      displayName: "Ada",
+      photoURL: null,
+      role: "admin",
+    } as any);
+    expect("role" in (setDoc.mock.calls[0][1] as object)).toBe(false);
+  });
+
   it("substitutes nulls and a default display name rather than undefined", async () => {
     await syncUserProfile({ uid: "uid-1", email: null, displayName: null, photoURL: null });
     expect(setDoc.mock.calls[0][1]).toMatchObject({
@@ -493,6 +526,9 @@ describe("onAuthUserChanged", () => {
       email: "a@b.c",
       displayName: "Ada Reflector",
       photoURL: "https://example.com/a.png",
+      // Every session starts as a standard user; admin is re-emitted only after
+      // the predefined Firestore role is read back.
+      role: "user",
     });
   });
 
@@ -539,17 +575,234 @@ describe("onAuthUserChanged", () => {
     });
     expect(profile).toMatchObject({
       email: "fadlysyah96@gmail.com",
+      role: "user",
+    });
+  });
+
+  it("never derives a role from the email address", async () => {
+    // The previous design granted admin to a hardcoded address, which shipped in
+    // the public bundle and was trusted from a request header. Roles are now
+    // predefined data in Firestore and nothing else.
+    getDoc.mockResolvedValue({ exists: () => false, data: () => undefined });
+    const profile = emit({
+      uid: "uid-owner",
+      email: "fadlysyah96@gmail.com",
+      displayName: "Owner",
+      photoURL: null,
+      isAnonymous: false,
+    });
+    expect(profile.role).toBe("user");
+  });
+});
+
+describe("fetchUserRole", () => {
+  it("reports admin when the predefined Firestore role says so", async () => {
+    getDoc.mockResolvedValue({ exists: () => true, data: () => ({ role: "admin" }) });
+    await expect(fetchUserRole("uid-1")).resolves.toBe("admin");
+  });
+
+  it("reports user for every other stored value", async () => {
+    for (const role of ["user", "Admin", "ADMIN", "superadmin", "", null, undefined, 1]) {
+      getDoc.mockResolvedValue({ exists: () => true, data: () => ({ role }) });
+      await expect(fetchUserRole("uid-1"), String(role)).resolves.toBe("user");
+    }
+  });
+
+  it("reports user when the document does not exist", async () => {
+    getDoc.mockResolvedValue({ exists: () => false, data: () => undefined });
+    await expect(fetchUserRole("uid-1")).resolves.toBe("user");
+  });
+
+  it("degrades to user, not admin, when the read fails", async () => {
+    // Failing closed matters: this decides whether the UI offers admin controls.
+    getDoc.mockRejectedValue(new Error("permission-denied"));
+    await expect(fetchUserRole("uid-1")).resolves.toBe("user");
+  });
+
+  it("short-circuits for a missing uid and a preview session", async () => {
+    await expect(fetchUserRole("")).resolves.toBe("user");
+    await expect(fetchUserRole("preview-user-abc")).resolves.toBe("user");
+    expect(getDoc).not.toHaveBeenCalled();
+  });
+});
+
+describe("getIdTokenForApi / adminAuthHeaders", () => {
+  it("returns the signed-in user's ID token", async () => {
+    authStub.currentUser = { getIdToken };
+    await expect(getIdTokenForApi()).resolves.toBe("id-token-abc");
+  });
+
+  it("returns null when nobody is signed in", async () => {
+    authStub.currentUser = null;
+    await expect(getIdTokenForApi()).resolves.toBeNull();
+  });
+
+  it("returns null rather than throwing when the token refresh fails", async () => {
+    authStub.currentUser = { getIdToken };
+    getIdToken.mockRejectedValue(new Error("network error"));
+    await expect(getIdTokenForApi()).resolves.toBeNull();
+  });
+
+  it("builds a bearer Authorization header", async () => {
+    authStub.currentUser = { getIdToken };
+    await expect(adminAuthHeaders()).resolves.toEqual({
+      Authorization: "Bearer id-token-abc",
+    });
+  });
+
+  it("builds no header when signed out, so the request is simply unauthenticated", async () => {
+    authStub.currentUser = null;
+    await expect(adminAuthHeaders()).resolves.toEqual({});
+  });
+});
+
+describe("updateUserRoleInFirestore", () => {
+  it("refuses to write a real account's role from the browser", async () => {
+    await updateUserRoleInFirestore("uid-1", "admin");
+    // Roles are predefined data; the browser must not be able to grant them.
+    expect(setDoc).not.toHaveBeenCalled();
+  });
+
+  it("still toggles the sandboxed preview session's role", async () => {
+    localStorage.setItem(
+      "reflect_ai_preview_user",
+      JSON.stringify({ uid: "preview-user-abc", role: "user" })
+    );
+    await updateUserRoleInFirestore("preview-user-abc", "admin");
+    const stored = JSON.parse(localStorage.getItem("reflect_ai_preview_user")!);
+    expect(stored.role).toBe("admin");
+    expect(setDoc).not.toHaveBeenCalled();
+  });
+});
+
+describe("testConnection", () => {
+  it("reports true when Firestore answers", async () => {
+    getDocFromServer.mockResolvedValue({ exists: () => true });
+    await expect(testConnection()).resolves.toBe(true);
+  });
+
+  it("reports false rather than throwing when the read fails", async () => {
+    getDocFromServer.mockRejectedValue(new Error("permission-denied"));
+    await expect(testConnection()).resolves.toBe(false);
+  });
+
+  it("reports false and hints at configuration when the client is offline", async () => {
+    getDocFromServer.mockRejectedValue(new Error("Failed to get document because the client is offline"));
+    await expect(testConnection()).resolves.toBe(false);
+  });
+
+  it("tolerates a non-Error rejection", async () => {
+    getDocFromServer.mockRejectedValue("a thrown string");
+    await expect(testConnection()).resolves.toBe(false);
+  });
+});
+
+describe("handleFirestoreError", () => {
+  it("throws a JSON envelope naming the operation and path", () => {
+    let thrown: unknown;
+    try {
+      handleFirestoreError(new Error("permission-denied"), OperationType.WRITE, "users/uid-1");
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    const info = JSON.parse((thrown as Error).message);
+    expect(info).toMatchObject({
+      error: "permission-denied",
+      operationType: "write",
+      path: "users/uid-1",
+    });
+  });
+
+  it("stringifies a non-Error rejection", () => {
+    expect(() => handleFirestoreError("plain string", OperationType.GET, null)).toThrow(
+      /plain string/
+    );
+  });
+
+  it("includes the signed-in identity to make a rules failure diagnosable", () => {
+    authStub.currentUser = {
+      getIdToken,
+      uid: "uid-1",
+      email: "a@b.c",
+      emailVerified: true,
+      isAnonymous: false,
+      tenantId: null,
+      providerData: [{ providerId: "google.com", email: "a@b.c" }],
+    } as any;
+    try {
+      handleFirestoreError(new Error("denied"), OperationType.LIST, "users");
+    } catch (e) {
+      const info = JSON.parse((e as Error).message);
+      expect(info.authInfo).toMatchObject({
+        userId: "uid-1",
+        email: "a@b.c",
+        emailVerified: true,
+        isAnonymous: false,
+      });
+      expect(info.authInfo.providerInfo).toEqual([
+        { providerId: "google.com", email: "a@b.c" },
+      ]);
+    }
+  });
+
+  it("records an empty provider list when nobody is signed in", () => {
+    authStub.currentUser = null;
+    try {
+      handleFirestoreError(new Error("denied"), OperationType.CREATE, "users");
+    } catch (e) {
+      expect(JSON.parse((e as Error).message).authInfo.providerInfo).toEqual([]);
+    }
+  });
+});
+
+describe("clearLocalEntries", () => {
+  it("empties the offline buffer and notifies subscribers", () => {
+    localStorage.setItem(LOCAL_ENTRIES_KEY, JSON.stringify([entry("e1")]));
+    const onData = vi.fn();
+    subscribeToUserInteractions("preview-user-abc", onData, vi.fn());
+    onData.mockClear();
+
+    clearLocalEntries();
+
+    expect(localStorage.getItem(LOCAL_ENTRIES_KEY)).toBeNull();
+    expect(onData).toHaveBeenCalledWith([]);
+  });
+
+  it("is safe to call when the buffer is already empty", () => {
+    expect(() => clearLocalEntries()).not.toThrow();
+  });
+});
+
+describe("signInAsDemoUser", () => {
+  it("creates a preview session that is never written to Firestore", () => {
+    const user = signInAsDemoUser("user");
+    expect(user.uid.startsWith("preview-user")).toBe(true);
+    expect(user.role).toBe("user");
+    // A preview uid short-circuits every Firestore write path.
+    expect(setDoc).not.toHaveBeenCalled();
+  });
+
+  it("can open a demo admin session for showing the admin UI", () => {
+    const admin = signInAsDemoUser("admin");
+    expect(admin.role).toBe("admin");
+    expect(admin.displayName).toBe("Demo Admin User");
+    expect(admin.uid.startsWith("preview-user")).toBe(true);
+  });
+
+  it("defaults to a standard user", () => {
+    expect(signInAsDemoUser().role).toBe("user");
+  });
+
+  it("persists the session so a reload keeps it", () => {
+    const user = signInAsDemoUser("admin");
+    expect(JSON.parse(localStorage.getItem("reflect_ai_preview_user")!)).toMatchObject({
+      uid: user.uid,
       role: "admin",
     });
   });
 
-  it("identifies designated admin email with case and whitespace insensitivity", () => {
-    expect(DESIGNATED_ADMIN_EMAIL).toBe("fadlysyah96@gmail.com");
-    expect(isDesignatedAdmin("fadlysyah96@gmail.com")).toBe(true);
-    expect(isDesignatedAdmin("FADLYSYAH96@GMAIL.COM")).toBe(true);
-    expect(isDesignatedAdmin("  fadlysyah96@gmail.com ")).toBe(true);
-    expect(isDesignatedAdmin("other@example.com")).toBe(false);
-    expect(isDesignatedAdmin("")).toBe(false);
-    expect(isDesignatedAdmin(null)).toBe(false);
+  it("uses an internal, non-routable email so it cannot collide with a real account", () => {
+    expect(signInAsDemoUser("admin").email).toBe("admin.demo@reflectai.internal");
   });
 });

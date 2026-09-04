@@ -120,11 +120,43 @@ bun run build && grep -oE 'require\("[^"./][^"]*"\)' dist/server.cjs | sort -u
 user). `scripts/deploy-cloud-run.sh` gates on `lint` + `test:security` before
 submitting to Cloud Build.
 
-## Known limitation
+## Authorization
 
-`decodeJwtClaims` in `src/server/lib/rbac.ts` reads JWT claims **without
-verifying the signature**, so a forged token could claim `admin: true`. This is
-acceptable for the current demo deployment and is called out in the code. Before
-exposing the admin surface to untrusted callers, swap it for the Firebase Admin
-SDK's `verifyIdToken`. `src/server/lib/rbac.test.ts` is where that change gets
-proven.
+Administrator status is **predefined data**, not code: the document
+`users/{uid}` in Firestore carries `role: "admin"`. Everyone who signs in is a
+standard user until that document says otherwise.
+
+```bash
+bun run role:list                                  # who is an admin
+bash scripts/set-user-role.sh <email> admin        # grant
+bash scripts/set-user-role.sh <email> user         # revoke
+```
+
+Two invariants make this trustworthy, and both have tests:
+
+1. **Identity comes from a verified Firebase ID token**, never from a header.
+   `src/server/lib/firebaseAdmin.ts` verifies it with the Admin SDK; the role is
+   then looked up by the **uid inside that token**, so a caller cannot ask about
+   someone else's privileges.
+2. **Clients cannot write `users/{uid}.role`.** `firestore.rules` denies it on
+   both create and update. Without that, any account could grant itself the role
+   the `isAdmin()` rule reads.
+
+`decideAdminAccess` in `src/server/lib/rbac.ts` is the whole decision as a pure
+function. Add an admin route by mounting it behind `verifyAdmin`; never re-derive
+privilege anywhere else.
+
+**Never reintroduce any of these** — each was a working escalation path on a
+public service, and `test/api/admin.test.ts` asserts they stay closed:
+
+- trusting `x-admin-role`, `x-admin-email`, or `x-user-email`
+- a shared static bearer token
+- reading claims from an **unverified** JWT
+- privileging a hardcoded email address (it also ships in the public bundle)
+
+The client's `role` is a UI hint only. It decides which controls to render and
+grants nothing; every privileged call is re-checked server-side.
+
+`ALLOW_INSECURE_ADMIN=1` accepts `x-admin-role: admin` with no credential, for
+local development. It is ignored when `NODE_ENV=production` and logs a warning
+when active.

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { UserProfile } from "../types";
 import firebaseConfig from "../lib/firebaseConfig";
+import { adminAuthHeaders } from "../lib/firebase";
 import {
   ShieldAlert,
   ShieldCheck,
@@ -43,24 +44,21 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [activeTab, setActiveTab] = useState<"overview" | "audit" | "rbac">("overview");
 
   const isAdmin = currentUser.role === "admin";
+  // A sandboxed preview session has no Firebase account behind it, so its role
+  // is local by definition and may be toggled to demonstrate the admin UI. A
+  // real account's role is server-side data and read-only here.
+  const isPreviewSession = currentUser.uid.startsWith("preview-user");
+  const [uidCopied, setUidCopied] = useState(false);
 
   const fetchAdminData = async () => {
     setIsLoading(true);
     try {
-      // Pass x-admin-role header or admin session token when currentUser is admin
+      // The server verifies this Firebase ID token and reads the caller's
+      // predefined role from Firestore. No header here grants anything.
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
+        ...(await adminAuthHeaders()),
       };
-      if (isAdmin) {
-        headers["x-admin-role"] = "admin";
-        headers["Authorization"] = "Bearer admin-session-token";
-      }
-      if (currentUser.email) {
-        headers["x-user-email"] = currentUser.email;
-        if (currentUser.email.toLowerCase().trim() === "fadlysyah96@gmail.com") {
-          headers["x-admin-email"] = currentUser.email;
-        }
-      }
 
       const metricsRes = await fetch("/api/admin/metrics", { headers });
       if (metricsRes.ok) {
@@ -91,42 +89,76 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     }
   }, [isOpen, currentUser.role]);
 
-  // Automated RBAC Security Check: Tests both authenticated Admin call and unauthorized call
+  /**
+   * Reads a JSON API response, refusing to guess when the body is not JSON.
+   *
+   * A request that misses an API route falls through to the SPA and returns
+   * index.html with a 200. Parsing that yields "Unexpected token '<'", which
+   * looks like an outage rather than the routing mistake it is.
+   */
+  const readJson = async (res: Response, label: string) => {
+    const contentType = res.headers?.get?.("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error(
+        `${label} did not return JSON (HTTP ${res.status}, ${contentType || "no content-type"}). ` +
+          "The request most likely missed the API and was served the app shell instead."
+      );
+    }
+    return res.json();
+  };
+
+  /**
+   * Broken Access Control (OWASP A01) verification.
+   *
+   * Probe 1 presents a forged credential plus every header that used to be
+   * trusted; it must be refused. Probe 2 presents the caller's real, verified ID
+   * token; the expected outcome depends on the caller's actual role, so a
+   * standard user seeing 403 here is a pass, not a failure.
+   */
   const handleRunRbacTest = async () => {
     setIsTestingRbac(true);
     setRbacTestResult(null);
 
     try {
-      // 1. Unauthorized attempt (should receive 403 Forbidden)
-      const unauthorizedRes = await fetch("/api/admin/metrics", {
+      const forgedRes = await fetch("/api/admin/metrics", {
         headers: {
           Authorization: "Bearer invalid-token-123",
-        },
-      });
-      const unauthorizedStatus = unauthorizedRes.status;
-      const unauthorizedBody = await unauthorizedRes.json();
-
-      // 2. Authorized admin attempt
-      const authorizedRes = await fetch("/api/admin/test-rbac", {
-        headers: {
-          Authorization: "Bearer admin-session-token",
+          // Previously-trusted headers, included deliberately: the suite proves
+          // they no longer grant anything.
           "x-admin-role": "admin",
+          "x-user-email": currentUser.email || "",
         },
       });
-      const authorizedStatus = authorizedRes.status;
-      const authorizedBody = await authorizedRes.json();
+      const forgedBody = await readJson(forgedRes, "Forged-credential probe");
+
+      // POST: the route is app.post, and a GET would be served the app shell.
+      const realRes = await fetch("/api/admin/test-rbac", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await adminAuthHeaders()) },
+        body: JSON.stringify({}),
+      });
+      const realBody = await readJson(realRes, "Verified-token probe");
+
+      const expectedRealStatus = isAdmin ? 200 : 403;
 
       setRbacTestResult({
         unauthorizedTest: {
-          status: unauthorizedStatus,
-          passed: unauthorizedStatus === 403,
-          message: unauthorizedBody.error || "Access denied: Admin privileges required.",
+          status: forgedRes.status,
+          passed: forgedRes.status === 403,
+          message: forgedBody.error || "Access denied: Admin privileges required.",
         },
         authorizedTest: {
-          status: authorizedStatus,
-          passed: authorizedStatus === 200,
-          message: authorizedBody.message || "Admin verification succeeded.",
+          status: realRes.status,
+          passed: realRes.status === expectedRealStatus,
+          expected: expectedRealStatus,
+          message:
+            realBody.message ||
+            realBody.error ||
+            (realRes.status === 200
+              ? "Admin verification succeeded."
+              : "Access denied: Admin privileges required."),
         },
+        callerIsAdmin: isAdmin,
         timestamp: Date.now(),
       });
     } catch (err: any) {
@@ -168,22 +200,27 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 <h3 className="text-base font-semibold text-[#2c2b29] font-serif">
                   Admin & RBAC Control Hub
                 </h3>
-                {currentUser.email?.toLowerCase().trim() === "fadlysyah96@gmail.com" ? (
-                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-[#edf4ec] text-[#375432] border-[#c4dbc1] flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3 text-[#476340]" />
-                    Designated Master Admin (fadlysyah96@gmail.com)
-                  </span>
-                ) : (
-                  <span
-                    className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
-                      isAdmin
-                        ? "bg-[#edf4ec] text-[#375432] border-[#c4dbc1]"
-                        : "bg-[#fcf5e8] text-[#875914] border-[#ebd4b1]"
-                    }`}
-                  >
-                    {isAdmin ? "Elevated Admin View" : "Basic Access (Standard User)"}
-                  </span>
-                )}
+                <span
+                  className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+                    isAdmin
+                      ? "bg-[#edf4ec] text-[#375432] border-[#c4dbc1]"
+                      : "bg-[#fcf5e8] text-[#875914] border-[#ebd4b1]"
+                  }`}
+                  title={
+                    isPreviewSession
+                      ? "Sandboxed preview session — this role is local only"
+                      : "Read from users/{uid}.role in Cloud Firestore"
+                  }
+                >
+                  {isAdmin && <CheckCircle2 className="w-3 h-3" />}
+                  {isPreviewSession
+                    ? isAdmin
+                      ? "Demo Admin (sandboxed)"
+                      : "Demo User (sandboxed)"
+                    : isAdmin
+                      ? "Administrator"
+                      : "Standard access"}
+                </span>
               </div>
               <p className="text-[11px] text-[#7c786e]">
                 Role-Based Access Control, Security Rules, and Threat Auditing
@@ -206,26 +243,16 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 <span className="hidden sm:inline">Switch Account</span>
               </button>
             )}
-            <button
-              onClick={handleToggleRole}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer border ${
-                isAdmin
-                  ? "bg-[#f4efe6] hover:bg-[#eae3d5] text-[#635d52] border-[#ded7c8]"
-                  : "bg-[#476340] hover:bg-[#3c5436] text-[#fdfbf7] border-[#3c5436] shadow-xs"
-              }`}
-            >
-              {isAdmin ? (
-                <>
-                  <Unlock className="w-3.5 h-3.5" />
-                  <span>Switch to User View</span>
-                </>
-              ) : (
-                <>
-                  <Lock className="w-3.5 h-3.5" />
-                  <span>Elevate to Admin</span>
-                </>
-              )}
-            </button>
+            {isPreviewSession && (
+              <button
+                onClick={handleToggleRole}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer border bg-[#f4efe6] hover:bg-[#eae3d5] text-[#635d52] border-[#ded7c8]"
+                title="Sandboxed preview only — switches the demo role locally"
+              >
+                {isAdmin ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                <span>{isAdmin ? "Demo: user view" : "Demo: admin view"}</span>
+              </button>
+            )}
             <button
               onClick={onClose}
               aria-label="Close Security Hub"
@@ -277,19 +304,70 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
           {activeTab === "overview" && (
             <div className="space-y-4">
               {!isAdmin && (
-                <div className="p-3 bg-[#fbf5eb] border border-[#eadbbf] rounded-xl flex items-center justify-between text-xs text-[#8a6328]">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 shrink-0 text-[#ad7c32]" />
-                    <span>
-                      Viewing in Standard User mode. Admin endpoints return 403 Forbidden until elevated.
-                    </span>
+                <div className="p-4 bg-[#fcf7ef] border border-[#ebd9bd] rounded-xl space-y-3 text-xs text-[#6b5525]">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 shrink-0 text-[#ad7c32] mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="font-semibold text-[#5c4718]">You have standard access</p>
+                      <p className="leading-relaxed text-[#7a6330]">
+                        Administrator access is granted by an operator, not from this
+                        screen. Your role is read from{" "}
+                        <code className="bg-[#f5ecdb] px-1 py-0.5 rounded border border-[#e6d3b4]">
+                          users/&#123;uid&#125;.role
+                        </code>{" "}
+                        in Cloud Firestore, and security rules prevent the app from
+                        writing it — otherwise any account could grant itself the
+                        role that governs it.
+                      </p>
+                    </div>
                   </div>
-                  <button
-                    onClick={handleToggleRole}
-                    className="underline font-semibold hover:text-[#523910] cursor-pointer ml-2"
-                  >
-                    Enable Admin Mode
-                  </button>
+
+                  {!isPreviewSession && (
+                    <div className="pl-6 space-y-2">
+                      <p className="text-[11px] text-[#7a6330]">
+                        Send an operator your user ID and ask them to run{" "}
+                        <code className="bg-[#f5ecdb] px-1 py-0.5 rounded border border-[#e6d3b4]">
+                          scripts/set-user-role.sh
+                        </code>
+                        :
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 bg-[#ffffff] border border-[#e6d3b4] rounded-lg px-2.5 py-1.5 font-mono text-[11px] text-[#4a4741] truncate">
+                          {currentUser.uid}
+                        </code>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(currentUser.uid);
+                              setUidCopied(true);
+                              setTimeout(() => setUidCopied(false), 2000);
+                            } catch {
+                              /* clipboard unavailable; the id is selectable above */
+                            }
+                          }}
+                          title="Copy your user ID"
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-[#e6d3b4] bg-[#ffffff] hover:bg-[#f7efe0] text-[11px] font-medium text-[#6b5525] cursor-pointer transition shrink-0"
+                        >
+                          {uidCopied ? (
+                            <>
+                              <CheckCircle2 className="w-3 h-3 text-[#476340]" />
+                              <span>Copied</span>
+                            </>
+                          ) : (
+                            <>
+                              <Key className="w-3 h-3" />
+                              <span>Copy ID</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-[#8a7245] leading-relaxed">
+                        Everything below is read-only for you. The RBAC tab still works
+                        and will show the server correctly refusing your requests — that
+                        is the check passing, not failing.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -457,7 +535,9 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                       Automated Broken Access Control (OWASP A01) Verification
                     </h4>
                     <p className="text-[11px] text-[#7c786e]">
-                      Runs concurrent authorized and unauthorized HTTP requests against protected endpoints.
+                      Probe 1 presents a forged token plus every header that used to be
+                      trusted. Probe 2 presents your real, verified ID token. Both pass
+                      when the server's answer matches your actual role.
                     </p>
                   </div>
                   <button
@@ -518,13 +598,20 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                       <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
                       <div className="text-xs space-y-1">
                         <div className="font-semibold">
-                          Test 2: Elevated Admin Privileges Granted [HTTP {rbacTestResult.authorizedTest?.status}]
+                          Test 2:{" "}
+                          {rbacTestResult.callerIsAdmin
+                            ? "Verified administrator granted"
+                            : "Verified standard user refused"}{" "}
+                          [HTTP {rbacTestResult.authorizedTest?.status}, expected{" "}
+                          {rbacTestResult.authorizedTest?.expected}]
                         </div>
                         <div className="text-[11px] opacity-90">
                           {rbacTestResult.authorizedTest?.message}
                         </div>
                         <div className="text-[10px] font-mono opacity-80">
-                          Rule verified: Verified admin claims securely access administrative telemetry.
+                          {rbacTestResult.callerIsAdmin
+                            ? "Rule verified: a verified ID token whose Firestore role is 'admin' reaches administrative telemetry."
+                            : "Rule verified: a genuine, verified ID token is still refused without the 'admin' role. Refusal here is the correct outcome."}
                         </div>
                       </div>
                     </div>
