@@ -1,5 +1,25 @@
-import appletConfig from "../../firebase-applet-config.json";
-
+/**
+ * Firebase client configuration, resolved at runtime rather than baked in.
+ *
+ * Order of precedence:
+ *   1. `window.__FIREBASE_CONFIG__` — injected into the served HTML by
+ *      `server.ts` from the environment, which on Cloud Run comes from the
+ *      `reflect-ai-env` secret. This is the production path.
+ *   2. `import.meta.env.VITE_FIREBASE_*` — inlined by Vite from a local `.env`.
+ *      This is the local development path.
+ *   3. Derived defaults from the project id.
+ *
+ * There is deliberately no import of `firebase-applet-config.json`. That file is
+ * gitignored (it is the file that leaked an API key in the pre-rewrite history),
+ * so a static import of it resolves on one laptop and nowhere else: `gcloud
+ * builds submit` derives its upload filter from `.gitignore`, so Cloud Build
+ * never receives it and Rollup fails with "Could not resolve". The server still
+ * reads that file at runtime if it happens to exist, guarded by `existsSync`.
+ *
+ * Runtime injection is also what makes a key rotation take effect: the built
+ * assets are served with `max-age=31536000, immutable`, so anything inlined at
+ * build time would be pinned in caches until the filename hash changes.
+ */
 export interface FirebaseClientConfig {
   projectId: string;
   appId: string;
@@ -10,8 +30,6 @@ export interface FirebaseClientConfig {
   measurementId?: string;
   firestoreDatabaseId?: string;
 }
-
-const fallback = (appletConfig || {}) as Record<string, string>;
 
 interface WindowWithFirebaseConfig {
   __FIREBASE_CONFIG__?: Partial<FirebaseClientConfig>;
@@ -31,7 +49,6 @@ export function resolveFirebaseConfig(
   const projectId =
     runtimeConfig.projectId ||
     (import.meta.env.VITE_FIREBASE_PROJECT_ID as string) ||
-    fallback.projectId ||
     "";
 
   return {
@@ -39,39 +56,32 @@ export function resolveFirebaseConfig(
     appId:
       runtimeConfig.appId ||
       (import.meta.env.VITE_FIREBASE_APP_ID as string) ||
-      fallback.appId ||
       "",
     storageBucket:
       runtimeConfig.storageBucket ||
       (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET as string) ||
       (projectId ? `${projectId}.firebasestorage.app` : "") ||
-      fallback.storageBucket ||
       "",
     apiKey:
       runtimeConfig.apiKey ||
       (import.meta.env.VITE_FIREBASE_API_KEY as string) ||
-      fallback.apiKey ||
       "",
     authDomain:
       runtimeConfig.authDomain ||
       (import.meta.env.VITE_FIREBASE_AUTH_DOMAIN as string) ||
       (projectId ? `${projectId}.firebaseapp.com` : "") ||
-      fallback.authDomain ||
       "",
     messagingSenderId:
       runtimeConfig.messagingSenderId ||
       (import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID as string) ||
-      fallback.messagingSenderId ||
       "",
     measurementId:
       runtimeConfig.measurementId ||
       (import.meta.env.VITE_FIREBASE_MEASUREMENT_ID as string) ||
-      fallback.measurementId ||
       "",
     firestoreDatabaseId:
       runtimeConfig.firestoreDatabaseId ||
       (import.meta.env.VITE_FIREBASE_DATABASE_ID as string) ||
-      fallback.firestoreDatabaseId ||
       "reflect-ai-app",
   };
 }

@@ -43,7 +43,16 @@ ENV PORT=3000
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY package.json ./
-COPY firebase-applet-config.json* ./
+
+# firebase-applet-config.json is deliberately NOT copied. It is gitignored (it is
+# the file that leaked an API key), so `gcloud builds submit` never uploads it and
+# a `COPY firebase-applet-config.json* ./` matches nothing — Docker's builder
+# fails a wildcard COPY with zero matches ("no source files were specified").
+#
+# The image does not need it. In production the Firebase client config comes from
+# the reflect-ai-env secret mounted at /secrets/.env, which server.ts reads and
+# injects into the served HTML as window.__FIREBASE_CONFIG__. The server's read of
+# the applet file is a local-development convenience guarded by existsSync.
 
 # The oven/bun images ship a non-root `bun` user; drop privileges to it.
 USER bun
