@@ -62,6 +62,32 @@ Treat two things as hostile: the request body, and the model's output.
 - Never render model output as raw HTML. `MarkdownRenderer` deliberately has no
   `rehype-raw`.
 
+## Secret scanning
+
+```bash
+bun run audit:secrets     # every object in the store, orphaned included
+bun run audit:worktree    # the working tree
+```
+
+The pre-push hook runs the scanner on the commits being pushed and blocks on a
+finding. Do not push with `--no-verify`.
+
+Two things about this repo make the `--all` mode necessary:
+
+- **`git rev-list --all` only walks reachable objects.** This history has been
+  rewritten twice, and the pre-rewrite commits are still in the object store — one
+  of them holds a hardcoded API key that a branch-only scan reports as clean.
+- **Rewriting history does not remove a secret from a remote that already has
+  it.** GitHub keeps orphaned commits and serves them by SHA. So the first step
+  for a leaked credential is always *rotate at the source*; `purge-git-history.sh`
+  is cosmetic by comparison.
+
+`scripts/secret-allowlist.txt` records values that are public by design, by
+SHA-256 fingerprint rather than by value. Only a genuine public identifier
+belongs there — a referrer-restricted Firebase browser key, say, which Vite
+already compiles into the client bundle. A real credential gets rotated, never
+allowlisted.
+
 ## Changing a guard
 
 A change to `firestore.rules`, `src/server/lib/security.ts`, or

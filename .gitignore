@@ -34,6 +34,11 @@ firebase-applet-config*.json
 firebase-debug.log*
 .firebase/
 
+# Submission working documents: drafts, post copy and checklists for the
+# Hack2skill portal. Not part of the public repo.
+SUBMISSION.md
+brief.txt
+
 # Agent tooling
 # Antigravity is the committed agent surface: .agents/rules, .agents/skills and
 # AGENTS.md are shared with the team. Claude Code's .claude/ is kept local so

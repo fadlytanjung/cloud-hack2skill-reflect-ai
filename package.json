@@ -14,6 +14,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:security": "vitest run src/server/lib/security.test.ts src/server/lib/rbac.test.ts src/server/lib/rateLimit.test.ts test/api/admin.test.ts test/api/notifications.test.ts test/firestore-rules.test.ts",
+    "audit:secrets": "bash scripts/audit-git-secrets.sh --all",
+    "audit:worktree": "bash scripts/audit-git-secrets.sh --worktree",
     "hooks:install": "bash scripts/install-git-hooks.sh",
     "role:set": "bash scripts/set-user-role.sh",
     "role:list": "bash scripts/set-user-role.sh --list",

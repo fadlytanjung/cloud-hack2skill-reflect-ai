@@ -24,6 +24,31 @@ if [ ! -d node_modules ]; then
   exit 1
 fi
 
+# git feeds ref updates on stdin. Capture them once so both the scanner and any
+# later step can read them; stdin is not seekable.
+REF_UPDATES="$(cat)"
+
+printf '\033[36m▸ ReflectAI pre-push: secret scan\033[0m\n'
+if ! printf '%s\n' "$REF_UPDATES" | bash scripts/audit-git-secrets.sh; then
+  cat >&2 <<'MSG'
+
+✗ A secret-shaped value was found in the commits you are pushing.
+
+Nothing has been sent. Once a credential reaches a remote it is compromised, and
+rewriting history does NOT remove it — this repository already carries orphaned
+blobs from two earlier purges to prove it.
+
+  1. Rotate the credential at its source.
+  2. Remove it from the working tree; add the file to .gitignore.
+  3. Re-commit, then push.
+
+If the value is public by design, record its fingerprint in
+scripts/secret-allowlist.txt with a comment explaining why.
+
+MSG
+  exit 1
+fi
+
 printf '\033[36m▸ ReflectAI pre-push: type check\033[0m\n'
 if ! bun run --silent lint; then
   printf '\033[31m✗ Type check failed. Fix the errors above, then push again.\033[0m\n' >&2

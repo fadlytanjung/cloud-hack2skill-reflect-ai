@@ -368,6 +368,29 @@ RBAC, rate limiting, notification egress sanitization, and the Firestore rules
 Bypass once, deliberately: `SKIP_PREPUSH=1 git push`. If the hook is in the way,
 the fix is a passing test.
 
+### Secret scanning
+
+```bash
+bun run audit:secrets     # every object in the store, orphaned commits included
+bun run audit:worktree    # the working tree only
+```
+
+The pre-push hook runs this on the commits being pushed and refuses the push on a
+finding. Values are never printed — findings show the pattern class, the file, and
+a short SHA-256 fingerprint.
+
+`--all` scans **every object, not just the current branch**. That distinction
+matters here: this history has been rewritten twice, and the pre-rewrite commits
+are still in the object store. One of them contains a hardcoded Firebase browser
+key that a branch-only scan reports as clean. Those objects also remain fetchable
+from GitHub by SHA, because **rewriting history does not remove what was already
+pushed** — which is why the response to a leaked credential is to rotate it at the
+source, not to rewrite history.
+
+`scripts/secret-allowlist.txt` records values that are public by design, by
+fingerprint rather than by value, each with a comment saying why it is safe. A
+real credential is rotated, never allowlisted.
+
 ### Agent configuration
 
 `AGENTS.md` at the repo root is the shared context for any coding agent.

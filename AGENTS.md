@@ -20,6 +20,8 @@ This file is the shared context for any coding agent working in this repo
 | Coverage report + thresholds | `bun run test:coverage` |
 | Production build (client + `dist/server.cjs`) | `bun run build` |
 | Run the built server | `bun start` |
+| Scan all git objects for secrets | `bun run audit:secrets` |
+| Scan the working tree for secrets | `bun run audit:worktree` |
 | Install the pre-push hook | `bun run hooks:install` |
 | Deploy to Cloud Run | `bun run deploy:cloud-run` |
 
