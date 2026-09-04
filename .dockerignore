@@ -1,12 +1,41 @@
+# Dependencies and build output are produced inside the image
 node_modules
 dist
-.git
-.github
-.agents
-.claude
-.vscode
-*.log
 coverage
+
+# Never ship a lockfile from another package manager: the build installs
+# bun.lock frozen, and a stray package-lock.json invites a different resolution.
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Secrets. Cloud Run mounts the real .env from Secret Manager at runtime.
 .env
 .env.*
 !.env.example
+
+# Version control and CI
+.git
+.gitignore
+.github
+
+# Agent configuration and editor state
+.agents
+.claude
+.antigravity
+.githooks
+.vscode
+.idea
+
+# Tests and local tooling: the image is built from an already-verified commit,
+# and the pre-push hook plus CI run the suite outside the container.
+test
+vitest.config.ts
+**/*.test.ts
+**/*.test.tsx
+**/__tests__
+
+# Local artifacts
+.firebase
+*.log
+.DS_Store

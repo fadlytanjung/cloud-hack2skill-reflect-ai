@@ -100,7 +100,7 @@ firebase deploy --only firestore:rules --project "$PROJECT_ID" --non-interactive
 # Step 4: Build production assets
 echo ""
 echo "[4/5] Building production web bundle..."
-npm run build
+bun run build
 
 # Step 5: Deploy Firebase Hosting (replaces existing release)
 echo ""

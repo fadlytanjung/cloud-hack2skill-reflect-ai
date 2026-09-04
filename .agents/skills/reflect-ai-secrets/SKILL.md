@@ -121,8 +121,10 @@ Two workable shapes:
 ```bash
 # A. Mount the file where dotenv already looks for it
 gcloud run deploy reflectai-journal-reflection-assistant \
-  --source . --region us-west1 --project "${GCP_PROJECT_ID}" \
-  --set-secrets=/app/.env=reflect-ai-env:latest \
+  --image "gcr.io/${GCP_PROJECT_ID}/reflectai-journal-reflection-assistant:latest" \
+  --region us-west1 --project "${GCP_PROJECT_ID}" \
+  --set-secrets=/secrets/.env=reflect-ai-env:latest \
+  --set-env-vars=NODE_ENV=production,ENV_FILE=/secrets/.env \
   --port 3000 --allow-unauthenticated
 
 # B. Expand locally and set discrete env vars at deploy time
@@ -136,8 +138,20 @@ gcloud run deploy reflectai-journal-reflection-assistant \
 Prefer **A** — B writes secret values into the Cloud Run service config and into
 shell history.
 
-Mind the path in A. `server.ts` calls `dotenv.config()`, which reads
-`.env` relative to the **process working directory** (`/app/.env` for the default buildpack image).
+**Mind the mount path — do not mount inside `/app`.** Cloud Run mounts a secret
+file by mounting a *volume over its parent directory*. `--set-secrets=/app/.env=...`
+therefore mounts a volume at `/app`, hiding everything the image put there
+(`dist/`, `node_modules/`) and leaving the container with nothing to run. This is
+what broke an earlier deploy of this service.
+
+Mount into a dedicated directory and point the app at it with `ENV_FILE`.
+`server.ts` reads `dotenv.config({ path: process.env.ENV_FILE || ".env" })`, so
+`ENV_FILE=/secrets/.env` is all that is needed.
+
+`scripts/deploy-cloud-run.sh` does this, and also repairs a service that AI Studio
+created from source — see `scripts/normalize-cloud-run-service.py`, which strips
+the `run.googleapis.com/sources` annotation, the entrypoint override, the
+plaintext secret env vars, and an `/app` secret mount.
 
 The runtime service account needs read access, granted once:
 
@@ -158,15 +172,15 @@ the only env file that is committed, and it is what a fresh clone reads.
 
 ## Local development
 
-`npm run dev` runs `tsx server.ts` on port 3000 with Vite in middleware mode.
-`npm run build` emits `dist/` plus a bundled `dist/server.cjs`; `npm start` runs
-that. `npm run lint` is `tsc --noEmit` (strict); `npm test` is `vitest run`.
-`npm run test:security` runs just the guard suites — the SSRF webhook check,
+`bun run dev` runs `tsx server.ts` on port 3000 with Vite in middleware mode.
+`bun run build` emits `dist/` plus a bundled `dist/server.cjs`; `bun start` runs
+that. `bun run lint` is `tsc --noEmit` (strict); `bun run test` is `vitest run`.
+`bun run test:security` runs just the guard suites — the SSRF webhook check,
 admin RBAC, rate limiting, notification egress, and the Firestore rules — and is
-what the pre-push hook gates on (`npm run hooks:install`). See the
+what the pre-push hook gates on (`bun run hooks:install`). See the
 `tdd-workflow` skill for the red/green loop and the test harness.
 
-Deploys: `npm run deploy:hosting` or `npm run deploy:cloud-run`.
+Deploys: `bun run deploy:hosting` or `bun run deploy:cloud-run`.
 
 ## If a key leaks
 

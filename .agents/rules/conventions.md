@@ -31,9 +31,20 @@ trigger: always_on
   cannot be reached records `simulated`; a Firestore write that fails keeps a
   local copy and surfaces the error. Never fail silently.
 
+## Dependencies
+
+Bun only: `bun install`, one committed lockfile (`bun.lock`), never a
+`package-lock.json`. Regenerate and commit `bun.lock` in the same change as any
+`package.json` edit — the container installs `--frozen-lockfile` and will fail
+otherwise.
+
+`dependencies` is only what the running server needs (`@google/genai`, `dotenv`,
+`express`). Client and build packages are `devDependencies`; Vite compiles them
+into `dist/assets`, and the container's production stage skips them.
+
 ## Adding an endpoint
 
 1. Pure logic + unit test in `src/server/lib/`.
 2. Wire the route in `src/server/app.ts`.
 3. Integration test in `test/api/`, using `createTestApp`.
-4. `npm run lint && npm test`.
+4. `bun run lint && bun run test`.

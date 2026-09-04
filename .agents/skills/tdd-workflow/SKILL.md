@@ -12,13 +12,13 @@ argument, so a test never needs the network, an API key, or a real clock.
 ## Commands
 
 ```bash
-npm run test:watch                  # red/green loop while you work
-npm test                            # full suite, once
-npm test -- src/server/lib/rbac     # one file or directory
-npm test -- -t "rejects a webhook"  # one test by name
-npm run test:security               # the guard suites the pre-push hook runs
-npm run test:coverage               # report + enforce thresholds
-npm run lint                        # tsc strict, must be clean
+bun run test:watch                  # red/green loop while you work
+bun run test                            # full suite, once
+bun run test src/server/lib/rbac     # one file or directory
+bun run test -t "rejects a webhook"  # one test by name
+bun run test:security               # the guard suites the pre-push hook runs
+bun run test:coverage               # report + enforce thresholds
+bun run lint                        # tsc strict, must be clean
 ```
 
 ## The loop
@@ -42,7 +42,7 @@ before you write the code is testing nothing.
 
 ### 3. Refactor — with the test holding the behaviour still
 
-Then `npm run lint && npm test`.
+Then `bun run lint && bun run test`.
 
 ## Where the test goes
 
@@ -129,7 +129,7 @@ that call throw), `rateLimit`. It returns `app`, `audit`, `notifications`,
 ## Coverage
 
 ```bash
-npm run test:coverage       # writes coverage/index.html
+bun run test:coverage       # writes coverage/index.html
 ```
 
 Thresholds are enforced in `vitest.config.ts` and are a floor, not a target.
@@ -139,11 +139,11 @@ branch is genuinely unreachable, restructure the code rather than excluding it.
 ## Pre-push hook
 
 ```bash
-npm run hooks:install
+bun run hooks:install
 ```
 
-Installs `.githooks/pre-push`, which runs `npm run lint` and
-`npm run test:security` before every push — the guard suites that must never
+Installs `.githooks/pre-push`, which runs `bun run lint` and
+`bun run test:security` before every push — the guard suites that must never
 regress before a Cloud Run deploy. It is a git hook, so it lives outside version
 control until installed; each contributor runs the command once.
 

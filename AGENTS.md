@@ -12,18 +12,24 @@ This file is the shared context for any coding agent working in this repo
 
 | Task | Command |
 |---|---|
-| Dev server (Vite middleware, port 3000) | `npm run dev` |
-| Type check — must be clean | `npm run lint` |
-| Full test suite | `npm test` |
-| Watch mode while developing | `npm run test:watch` |
-| Security-critical tests only | `npm run test:security` |
-| Coverage report + thresholds | `npm run test:coverage` |
-| Production build (client + `dist/server.cjs`) | `npm run build` |
-| Run the built server | `npm start` |
-| Install the pre-push hook | `npm run hooks:install` |
-| Deploy to Cloud Run | `npm run deploy:cloud-run` |
+| Dev server (Vite middleware, port 3000) | `bun run dev` |
+| Type check — must be clean | `bun run lint` |
+| Full test suite | `bun run test` |
+| Watch mode while developing | `bun run test:watch` |
+| Security-critical tests only | `bun run test:security` |
+| Coverage report + thresholds | `bun run test:coverage` |
+| Production build (client + `dist/server.cjs`) | `bun run build` |
+| Run the built server | `bun start` |
+| Install the pre-push hook | `bun run hooks:install` |
+| Deploy to Cloud Run | `bun run deploy:cloud-run` |
 
-`npm run lint` and `npm test` must both pass before any commit. The pre-push
+**Bun is the package manager, script runner, and runtime** — `bun install`, not
+`npm install`. There is exactly one lockfile, `bun.lock`, and it is committed. A
+`package-lock.json` in this repo is a mistake: delete it. Both the container
+build and CI install with `--frozen-lockfile`, so `bun.lock` must be regenerated
+and committed in the same change as any `package.json` edit.
+
+`bun run lint` and `bun run test` must both pass before any commit. The pre-push
 hook enforces this; do not bypass it with `--no-verify`.
 
 ## Architecture
@@ -92,6 +98,27 @@ contributor's real `.env` can never change a test result.
    as raw HTML.
 7. **A guard change needs a test in the same commit.** If you relax a rule in
    `firestore.rules` or `security.ts`, a test must justify it.
+
+## Dependencies and the container
+
+`dependencies` holds **only what `dist/server.cjs` requires at runtime**:
+`@google/genai`, `dotenv`, `express`. Everything else — React, the Firebase SDK,
+Tailwind, lucide, react-markdown, the test toolchain — is a `devDependency`,
+because Vite compiles the client into `dist/assets` at build time. The
+`Dockerfile`'s production stage installs `dependencies` only, so a client library
+misfiled under `dependencies` silently bloats every deployed image.
+
+Adding a server-side runtime import means adding it to `dependencies`. Confirm
+what the bundle actually needs rather than guessing:
+
+```bash
+bun run build && grep -oE 'require\("[^"./][^"]*"\)' dist/server.cjs | sort -u
+```
+
+`Dockerfile` is three stages: `builder` (full install + `bun run build`), `deps`
+(production install only), `runner` (copies both, runs as the non-root `bun`
+user). `scripts/deploy-cloud-run.sh` gates on `lint` + `test:security` before
+submitting to Cloud Build.
 
 ## Known limitation
 

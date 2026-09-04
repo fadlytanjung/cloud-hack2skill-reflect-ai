@@ -5,7 +5,7 @@ trigger: always_on
 
 # Testing rules
 
-`npm run lint` (tsc, strict) and `npm test` must both be clean before a commit.
+`bun run lint` (tsc, strict) and `bun run test` must both be clean before a commit.
 
 ## Where a test goes
 

@@ -3,6 +3,13 @@ node_modules/
 .pnp
 .pnp.js
 
+# Bun is the only package manager; bun.lock is the only committed lockfile.
+# A second lockfile means the container and a laptop can resolve different
+# versions, and it is what broke the Cloud Build `npm ci` step.
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
 # Production build output
 dist/
 build/

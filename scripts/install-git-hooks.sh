@@ -5,7 +5,7 @@
 # Git hooks live in .git/hooks, which is not version-controlled, so every
 # contributor runs this once after cloning:
 #
-#   npm run hooks:install
+#   bun run hooks:install
 #
 set -euo pipefail
 
@@ -37,7 +37,7 @@ done
 
 cat <<'MSG'
 
-pre-push runs `npm run lint` and `npm run test:security` before every push,
+pre-push runs `bun run lint` and `bun run test:security` before every push,
 so a broken security guard cannot reach a remote — or a Cloud Run deploy.
 
 Bypass once (deliberately):  SKIP_PREPUSH=1 git push

@@ -110,8 +110,41 @@ Deploy the container to Google Cloud Run with automated Secret Manager binding:
 
 ### Using the Automated Deployment Script:
 ```bash
-npm run deploy:cloud-run
+bun run deploy:cloud-run
 # or: bash scripts/deploy-cloud-run.sh
+```
+
+The script runs `bun run lint` and `bun run test:security` **before** submitting
+the build, so a broken guard cannot reach production even when the deploy
+bypasses `git push` and its pre-push hook. Skip deliberately with
+`SKIP_TESTS=1 bun run deploy:cloud-run`.
+
+### The container
+
+`Dockerfile` is a three-stage Bun build:
+
+| Stage | Does |
+|---|---|
+| `builder` | `bun install --frozen-lockfile`, then `bun run build` (Vite client + esbuild server bundle) |
+| `deps` | `bun install --frozen-lockfile --production` — runtime dependencies only |
+| `runner` | copies `node_modules` from `deps` and `dist/` from `builder`, runs as the non-root `bun` user |
+
+Two things keep this reproducible and small:
+
+- **The lockfile is installed frozen.** A build either reproduces `bun.lock`
+  exactly or fails loudly. It never resolves fresh versions in CI that differ
+  from a developer's machine.
+- **`dependencies` holds only what the running server requires** —
+  `@google/genai`, `dotenv`, and `express`. Everything client-side (React,
+  the Firebase SDK, Tailwind, lucide, react-markdown) is compiled into
+  `dist/assets` by Vite and lives in `devDependencies`, so it never ships in the
+  runtime image. The production install is ~108 packages instead of ~486.
+
+If you add a server-side runtime import, it must go in `dependencies`. Verify
+what the bundle actually needs:
+
+```bash
+bun run build && grep -oE 'require\("[^"./][^"]*"\)' dist/server.cjs | sort -u
 ```
 
 ### Or Manually via gcloud & Cloud Build:
@@ -125,9 +158,43 @@ gcloud run deploy reflectai-journal-reflection-assistant \
   --platform managed \
   --region us-west1 \
   --allow-unauthenticated \
-  --set-secrets=/app/.env=reflect-ai-env:latest \
+  --set-secrets=/secrets/.env=reflect-ai-env:latest \
+  --set-env-vars=NODE_ENV=production,ENV_FILE=/secrets/.env \
   --port 3000 \
   --project <YOUR_GCP_PROJECT_ID>
+```
+
+> **Do not mount the secret inside `/app`.** Cloud Run mounts a secret file by
+> mounting a volume over its parent directory, so `--set-secrets=/app/.env=...`
+> hides `dist/` and `node_modules/` and the container has nothing to run. Mount
+> it at `/secrets/.env` and point the app at it with `ENV_FILE`.
+
+### Repairing a service created by AI Studio
+
+A service first deployed from source carries metadata that an image-based deploy
+cannot reconcile, and `gcloud` has no flag to remove it:
+
+```
+spec.template.metadata.annotations[run.googleapis.com/sources]:
+Source annotation has sources that are not referenced by a container.
+```
+
+`scripts/normalize-cloud-run-service.py` strips it, along with the entrypoint
+override AI Studio pins (`npm start` / `node server.js`, neither of which exists
+in the Bun image), any plaintext secret env values in the spec, and an `/app`
+secret mount. `bun run deploy:cloud-run` runs it automatically; it is idempotent.
+
+To apply it by hand:
+
+```bash
+gcloud run services describe reflectai-journal-reflection-assistant \
+  --region us-west1 --format=export > /tmp/svc.yaml
+
+python3 scripts/normalize-cloud-run-service.py \
+  --image gcr.io/<YOUR_GCP_PROJECT_ID>/reflectai-journal-reflection-assistant:latest \
+  < /tmp/svc.yaml > /tmp/svc.clean.yaml
+
+gcloud run services replace /tmp/svc.clean.yaml --region us-west1
 ```
 
 ---
@@ -161,10 +228,10 @@ All static bundles are served from the high-speed edge CDN, while all dynamic in
 
 1. **Build and Deploy to Firebase Hosting**:
    ```bash
-   npm run build
+   bun run build
    firebase deploy --only hosting --project <YOUR_GCP_PROJECT_ID>
    ```
-   *(Or use the automated script: `npm run deploy:hosting`)*
+   *(Or use the automated script: `bun run deploy:hosting`)*
 
 2. **Dedicated Multisite (Optional)**:
    If you wish to create a dedicated multisite like `<YOUR_PROJECT_ID>-reflect-ai`:
@@ -196,9 +263,9 @@ gcloud run services update reflectai-journal-reflection-assistant \
 ## 8. Local Development
 
 ```bash
-npm install
-npm run hooks:install   # once per clone - installs the pre-push test gate
-npm run dev
+bun install
+bun run hooks:install   # once per clone - installs the pre-push test gate
+bun run dev
 ```
 
 Visit `http://localhost:3000` to interact with the application.
@@ -234,11 +301,11 @@ under `test/api/`. Nothing goes directly into `server.ts`.
 ## 9. Testing
 
 ```bash
-npm test                # full suite
-npm run test:watch      # red/green loop while developing
-npm run test:security   # guard suites only (what the pre-push hook runs)
-npm run test:coverage   # report to coverage/index.html + enforce thresholds
-npm run lint            # tsc --noEmit, strict
+bun run test                # full suite
+bun run test:watch      # red/green loop while developing
+bun run test:security   # guard suites only (what the pre-push hook runs)
+bun run test:coverage   # report to coverage/index.html + enforce thresholds
+bun run lint            # tsc --noEmit, strict
 ```
 
 | Location | Environment | Covers |
@@ -262,11 +329,11 @@ docblock on line 1; everything else runs in node.
 ### Pre-push hook
 
 ```bash
-npm run hooks:install
+bun run hooks:install
 ```
 
 Sets `core.hooksPath` to the tracked `.githooks/` directory. `pre-push` runs
-`npm run lint` and `npm run test:security` -- the SSRF webhook guard, admin
+`bun run lint` and `bun run test:security` -- the SSRF webhook guard, admin
 RBAC, rate limiting, notification egress sanitization, and the Firestore rules
 -- so a broken security boundary cannot reach a remote, or a Cloud Run deploy.
 
@@ -293,7 +360,7 @@ If credentials or local config files (`firebase-applet-config.json`, `.env`) wer
 Run the built-in remediation script:
 
 ```bash
-npm run purge:history
+bun run purge:history
 ```
 
 ### Manual Fast Remediation (Recommended)
