@@ -168,11 +168,12 @@ export const LocationPickerModal: React.FC<LocationPickerModalProps> = ({
         <div className="p-4 space-y-4 overflow-y-auto flex-1">
           {/* Address Search Bar */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-[#4a4741]">Search City or Place</label>
+            <label htmlFor="location-address-input" className="text-xs font-medium text-[#4a4741]">Search City or Place</label>
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <Search className="w-4 h-4 text-[#8a857a] absolute left-3 top-2.5" />
                 <input
+                  id="location-address-input"
                   type="text"
                   value={addressInput}
                   onChange={(e) => setAddressInput(e.target.value)}
@@ -231,8 +232,9 @@ export const LocationPickerModal: React.FC<LocationPickerModalProps> = ({
           {/* Fine-tune Coordinates */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-[11px] text-[#7c786e] font-medium">Latitude (Deg)</label>
+              <label htmlFor="location-latitude-input" className="text-[11px] text-[#7c786e] font-medium">Latitude (Deg)</label>
               <input
+                id="location-latitude-input"
                 type="number"
                 step="0.0001"
                 value={latitude}
@@ -245,8 +247,9 @@ export const LocationPickerModal: React.FC<LocationPickerModalProps> = ({
               />
             </div>
             <div>
-              <label className="text-[11px] text-[#7c786e] font-medium">Longitude (Deg)</label>
+              <label htmlFor="location-longitude-input" className="text-[11px] text-[#7c786e] font-medium">Longitude (Deg)</label>
               <input
+                id="location-longitude-input"
                 type="number"
                 step="0.0001"
                 value={longitude}

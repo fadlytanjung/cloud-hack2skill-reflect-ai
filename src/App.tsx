@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { UserProfile, JournalEntry } from "./types";
 import {
   onAuthUserChanged,
@@ -20,6 +20,11 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [authInitialized, setAuthInitialized] = useState(false);
   const [entries, setEntries] = useState<JournalEntry[]>([]);
+  // Distinguishes "this user has no entries" from "the first snapshot has not
+  // arrived yet". Without it the auto-create effect fires before Firestore
+  // responds, and the blank entry it creates then wins over the real most
+  // recent one.
+  const [entriesLoaded, setEntriesLoaded] = useState(false);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const [activeEntry, setActiveEntry] = useState<JournalEntry | null>(null);
   const [syncStatus, setSyncStatus] = useState<"saved" | "saving" | "error">("saved");
@@ -50,15 +55,19 @@ export default function App() {
   useEffect(() => {
     if (!currentUser?.uid) {
       setEntries([]);
+      setEntriesLoaded(false);
       setActiveEntry(null);
       setSelectedEntryId(null);
       return;
     }
 
+    setEntriesLoaded(false);
+
     const unsubscribe = subscribeToUserInteractions(
       currentUser.uid,
       (fetchedEntries) => {
         setEntries(fetchedEntries);
+        setEntriesLoaded(true);
         // If there is no active entry, initialize with the most recent or create a new one
         setActiveEntry((prev) => {
           if (!prev && fetchedEntries.length > 0) {
@@ -77,6 +86,9 @@ export default function App() {
       },
       (error) => {
         console.error("Firestore subscription error:", error);
+        // The read failed, so no entry will arrive; unblock the auto-create
+        // effect rather than leaving the user on a spinner.
+        setEntriesLoaded(true);
         setSyncStatus("error");
       }
     );
@@ -104,12 +116,12 @@ export default function App() {
     setSelectedEntryId(newId);
   }, [currentUser?.uid]);
 
-  // If user is authenticated and has zero entries and no active entry, auto-create the first entry
+  // Once the vault has actually loaded and is genuinely empty, open a first entry
   useEffect(() => {
-    if (authInitialized && currentUser && entries.length === 0 && !activeEntry) {
+    if (authInitialized && currentUser && entriesLoaded && entries.length === 0 && !activeEntry) {
       handleNewEntry();
     }
-  }, [authInitialized, currentUser, entries.length, activeEntry, handleNewEntry]);
+  }, [authInitialized, currentUser, entriesLoaded, entries.length, activeEntry, handleNewEntry]);
 
   // Select an existing entry from history
   const handleSelectEntry = (entry: JournalEntry) => {

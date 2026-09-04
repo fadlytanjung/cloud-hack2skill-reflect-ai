@@ -4,11 +4,9 @@ import {
   Plus,
   Search,
   MessageSquare,
-  Calendar,
   Trash2,
   Tag,
   Clock,
-  ChevronRight,
   BookMarked,
   MapPin,
 } from "lucide-react";

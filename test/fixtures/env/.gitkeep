@@ -1,0 +1,6 @@
+# Intentionally empty.
+#
+# vitest.config.ts sets `envDir` to this directory so Vite's automatic .env
+# loading finds nothing. Without it, a developer's real ./.env would override
+# the deterministic values in `test.env` and the suite would pass or fail
+# depending on local credentials.

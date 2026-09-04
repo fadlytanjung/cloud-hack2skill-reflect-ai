@@ -7,17 +7,10 @@ import {
   Sparkles,
   Send,
   Loader2,
-  RefreshCw,
   Check,
   Copy,
-  Lightbulb,
-  Compass,
-  FileText,
   AlertCircle,
-  Tag,
-  ChevronDown,
   Quote,
-  Flame,
   MapPin,
   MessageSquare,
 } from "lucide-react";
@@ -173,8 +166,19 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
             if (rawData === "[DONE]") {
               break;
             }
+            let parsed: any = null;
             try {
-              const parsed = JSON.parse(rawData);
+              parsed = JSON.parse(rawData);
+            } catch (e: any) {
+              // A partial frame is normal mid-stream; anything else is worth a note.
+              if (e.message && !e.message.includes("Unexpected end of JSON")) {
+                console.warn("Parse warning:", e);
+              }
+            }
+
+            if (parsed) {
+              // Must be raised outside the parse catch, or the server's actual
+              // failure reason is swallowed as a parse warning.
               if (parsed.error) {
                 throw new Error(parsed.error);
               }
@@ -184,10 +188,6 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
               }
               if (parsed.modelUsed) {
                 setStreamingModelUsed(parsed.modelUsed);
-              }
-            } catch (e: any) {
-              if (e.message && !e.message.includes("Unexpected end of JSON")) {
-                console.warn("Parse warning:", e);
               }
             }
           }

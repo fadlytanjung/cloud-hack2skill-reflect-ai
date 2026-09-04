@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+#
+# ReflectAI pre-push hook.
+#
+# Runs the type checker and the security-critical test suites before anything
+# reaches a remote — and therefore before it can reach Cloud Run. These are the
+# guards (SSRF, RBAC, egress sanitization, Firestore rules) that must never
+# silently regress.
+#
+# Install with: npm run hooks:install
+# Skip once, deliberately:  SKIP_PREPUSH=1 git push
+#
+set -euo pipefail
+
+if [ "${SKIP_PREPUSH:-0}" = "1" ]; then
+  printf '\033[33m⚠  pre-push checks skipped via SKIP_PREPUSH=1\033[0m\n' >&2
+  exit 0
+fi
+
+cd "$(git rev-parse --show-toplevel)"
+
+if [ ! -d node_modules ]; then
+  printf '\033[31m✗ node_modules is missing — run `npm install` before pushing.\033[0m\n' >&2
+  exit 1
+fi
+
+printf '\033[36m▸ ReflectAI pre-push: type check\033[0m\n'
+if ! npm run --silent lint; then
+  printf '\033[31m✗ Type check failed. Fix the errors above, then push again.\033[0m\n' >&2
+  exit 1
+fi
+
+printf '\033[36m▸ ReflectAI pre-push: security test suites\033[0m\n'
+if ! npm run --silent test:security; then
+  cat >&2 <<'MSG'
+
+✗ Security tests failed. This push is blocked.
+
+These suites cover the SSRF webhook guard, admin RBAC, notification egress
+sanitization, and the Firestore rules. A failure here means a security
+boundary changed. Fix the code, or — if the change is intentional — update the
+test to describe the new boundary, in this same commit.
+
+MSG
+  exit 1
+fi
+
+printf '\033[32m✓ pre-push checks passed\033[0m\n'

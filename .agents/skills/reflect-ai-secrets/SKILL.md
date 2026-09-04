@@ -160,8 +160,11 @@ the only env file that is committed, and it is what a fresh clone reads.
 
 `npm run dev` runs `tsx server.ts` on port 3000 with Vite in middleware mode.
 `npm run build` emits `dist/` plus a bundled `dist/server.cjs`; `npm start` runs
-that. `npm run lint` is `tsc --noEmit`; `npm test` is `vitest run`
-(`src/security.test.ts` covers the SSRF and RBAC guards).
+that. `npm run lint` is `tsc --noEmit` (strict); `npm test` is `vitest run`.
+`npm run test:security` runs just the guard suites — the SSRF webhook check,
+admin RBAC, rate limiting, notification egress, and the Firestore rules — and is
+what the pre-push hook gates on (`npm run hooks:install`). See the
+`tdd-workflow` skill for the red/green loop and the test harness.
 
 Deploys: `npm run deploy:hosting` or `npm run deploy:cloud-run`.
 

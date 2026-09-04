@@ -192,18 +192,96 @@ gcloud run services update reflectai-journal-reflection-assistant \
 
 ## 8. Local Development
 
-To run the full-stack dev server locally:
-
 ```bash
 npm install
+npm run hooks:install   # once per clone - installs the pre-push test gate
 npm run dev
 ```
 
 Visit `http://localhost:3000` to interact with the application.
 
+### Project layout
+
+`server.ts` is a thin entrypoint. All request handling lives in `src/server/`,
+where `createApp(deps)` builds the Express surface with every external
+dependency injected -- environment, Gemini client, audit log, notification
+history, rate limiter, `fetch`, and the clock:
+
+```
+server.ts                 dotenv, createApp, Vite/static middleware, listen
+src/server/app.ts         createApp(deps) - every route
+src/server/lib/           pure, unit-tested logic
+  security.ts               SSRF guard, coordinate bounds, egress sanitizer
+  rbac.ts                   admin identity resolution + Express middleware
+  rateLimit.ts              fixed-window limiter with an injectable clock
+  auditLog.ts               bounded audit trail
+  prompts.ts                persona wiring, history mapping, insight parsing
+  gemini.ts                 model fallback ladder, SSE framing
+  notifications.ts          webhook / Discord payload shaping + history
+  maps.ts                   geocode URLs, response parsing, offline fallback
+  clientConfig.ts           public bootstrap payload
+```
+
+Add an endpoint by putting its logic in a `src/server/lib/` module with a unit
+test, wiring the route in `src/server/app.ts`, then adding an integration test
+under `test/api/`. Nothing goes directly into `server.ts`.
+
 ---
 
-## 9. GitHub Security: Purging Leaked Keys & History Remediation
+## 9. Testing
+
+```bash
+npm test                # full suite
+npm run test:watch      # red/green loop while developing
+npm run test:security   # guard suites only (what the pre-push hook runs)
+npm run test:coverage   # report to coverage/index.html + enforce thresholds
+npm run lint            # tsc --noEmit, strict
+```
+
+| Location | Environment | Covers |
+|---|---|---|
+| `src/server/lib/*.test.ts` | node | pure logic, exhaustive edge cases |
+| `test/api/*.test.ts` | node + supertest | HTTP status, bodies, headers, egress |
+| `src/lib/*.test.ts` | jsdom | auth error mapping, payload hygiene, offline buffer |
+| `src/components/__tests__/*.test.tsx` | jsdom + Testing Library | rendering, interaction |
+| `src/App.test.tsx` | jsdom | auth gating, entry lifecycle, sync status |
+| `test/firestore-rules.test.ts` | node | static guard on `firestore.rules` |
+
+No test touches the network, needs an API key, sleeps, or reads your `.env`.
+`test/helpers/createTestApp.ts` stubs Gemini, `fetch`, and the clock, and
+exposes `fetchCalls` so a test can assert exactly what would have left the
+process. `vitest.config.ts` points `envDir` at an empty fixture directory so
+local credentials can never change a result.
+
+Component and browser tests opt into jsdom with a `// @vitest-environment jsdom`
+docblock on line 1; everything else runs in node.
+
+### Pre-push hook
+
+```bash
+npm run hooks:install
+```
+
+Sets `core.hooksPath` to the tracked `.githooks/` directory. `pre-push` runs
+`npm run lint` and `npm run test:security` -- the SSRF webhook guard, admin
+RBAC, rate limiting, notification egress sanitization, and the Firestore rules
+-- so a broken security boundary cannot reach a remote, or a Cloud Run deploy.
+
+Bypass once, deliberately: `SKIP_PREPUSH=1 git push`. If the hook is in the way,
+the fix is a passing test.
+
+### Agent configuration
+
+`AGENTS.md` at the repo root is the shared context for any coding agent.
+Antigravity rules live in `.agents/rules/` (testing, security, conventions) and
+skills in `.agents/skills/<name>/SKILL.md` (`reflect-ai-secrets`,
+`tdd-workflow`). These are committed. Claude Code's `.claude/` is gitignored, so
+each contributor can use whichever assistant they prefer without the two
+configurations drifting.
+
+---
+
+## 10. GitHub Security: Purging Leaked Keys & History Remediation
 
 If credentials or local config files (`firebase-applet-config.json`, `.env`) were previously pushed to a public repository, follow these exact steps to purge sensitive history and ensure zero secrets remain.
 

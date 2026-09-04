@@ -58,12 +58,9 @@ export function sanitizeForFirestore<T>(obj: T): T {
   return obj;
 }
 
-const PREVIEW_USER_KEY = "reflect_ai_preview_session";
 const LOCAL_ENTRIES_KEY = "reflect_ai_local_entries";
 
-// Event bus for local preview listeners
-type AuthListener = (user: UserProfile | null) => void;
-const authListeners: Set<AuthListener> = new Set();
+// Event bus so preview-session subscribers re-render on a local save.
 const entryListeners: Set<(entries: JournalEntry[]) => void> = new Set();
 
 function getLocalEntries(): JournalEntry[] {

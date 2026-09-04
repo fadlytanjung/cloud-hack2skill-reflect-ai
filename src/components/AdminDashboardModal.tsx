@@ -11,7 +11,6 @@ import {
   Unlock,
   X,
   AlertTriangle,
-  Server,
   Layers,
   Database,
   CheckCircle2,
@@ -199,6 +198,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             </button>
             <button
               onClick={onClose}
+              aria-label="Close Security Hub"
+              title="Close Security Hub"
               className="text-[#7c786e] hover:text-[#2c2b29] p-1.5 rounded-lg hover:bg-[#ede7db] transition cursor-pointer"
             >
               <X className="w-4 h-4" />
@@ -439,7 +440,20 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   </button>
                 </div>
 
-                {rbacTestResult && (
+                {rbacTestResult?.error && (
+                  <div className="p-3 rounded-xl border bg-[#fdf1f1] border-[#f2cccc] text-[#9e3838] flex items-start gap-3 animate-fadeIn">
+                    <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <div className="text-xs space-y-1">
+                      <div className="font-semibold">RBAC suite could not run</div>
+                      <div className="text-[11px] opacity-90">{rbacTestResult.error}</div>
+                      <div className="text-[10px] font-mono opacity-80">
+                        No verdict was reached — this is not a pass. Retry once connectivity is restored.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {rbacTestResult && !rbacTestResult.error && (
                   <div className="space-y-2.5 pt-2 border-t border-[#f0eae0] animate-fadeIn">
                     {/* Test 1: Unauthorized Access Blocked */}
                     <div

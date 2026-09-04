@@ -27,6 +27,15 @@ firebase-applet-config*.json
 firebase-debug.log*
 .firebase/
 
+# Agent tooling
+# Antigravity is the committed agent surface: .agents/rules, .agents/skills and
+# AGENTS.md are shared with the team. Claude Code's .claude/ is kept local so
+# each contributor can use whichever assistant they prefer without the two
+# configurations drifting apart. Skills live in .agents/skills/<name>/SKILL.md.
+.claude/
+.antigravity/
+.agents/local/
+
 # OS and IDE files
 .DS_Store
 Thumbs.db

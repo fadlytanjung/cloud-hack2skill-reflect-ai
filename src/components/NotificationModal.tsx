@@ -10,7 +10,6 @@ import {
   ShieldCheck,
   MessageSquare,
   Sparkles,
-  ExternalLink,
   Bot,
 } from "lucide-react";
 
