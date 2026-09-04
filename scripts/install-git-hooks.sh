@@ -20,6 +20,18 @@ fi
 
 chmod +x "$HOOKS_DIR"/* 2>/dev/null || true
 
+# git silently *ignores* a hook that is not executable -- it prints a hint and
+# proceeds with the push. The mode therefore has to be recorded in the index, or
+# a fresh clone gets a hook that looks installed and never runs.
+for hook in "$HOOKS_DIR"/*; do
+  [ -f "$hook" ] || continue
+  mode=$(git ls-files -s "$hook" 2>/dev/null | awk '{print $1}')
+  if [ -n "$mode" ] && [ "$mode" != "100755" ]; then
+    echo "  fixing recorded mode for $hook ($mode -> 100755)"
+    git update-index --chmod=+x "$hook"
+  fi
+done
+
 CURRENT="$(git config --get core.hooksPath || true)"
 if [ "$CURRENT" = "$HOOKS_DIR" ]; then
   echo "✓ git hooks already point at $HOOKS_DIR"
