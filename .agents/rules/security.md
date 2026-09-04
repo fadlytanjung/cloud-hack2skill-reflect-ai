@@ -88,6 +88,14 @@ belongs there — a referrer-restricted Firebase browser key, say, which Vite
 already compiles into the client bundle. A real credential gets rotated, never
 allowlisted.
 
+## Deploying rules
+
+`bun run deploy:rules` runs `firebase deploy --only firestore`. Do not narrow it
+to `--only firestore:rules`: `firebase.json` configures two databases, and that
+form updates only the default one while still printing "Deploy complete!". After
+deploying, confirm the `reflect-ai-app` release points at the new ruleset — the
+CLI's success message is not evidence.
+
 ## Changing a guard
 
 A change to `firestore.rules`, `src/server/lib/security.ts`, or

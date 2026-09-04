@@ -95,12 +95,38 @@ fi
 # Step 3: Deploy Firestore Security Rules to reflect-ai-app and (default)
 echo ""
 echo "[3/5] Deploying Firestore Security Rules to database '${DATABASE_ID}'..."
-firebase deploy --only firestore:rules --project "$PROJECT_ID" --non-interactive
+firebase deploy --only firestore --project "$PROJECT_ID" --non-interactive
 
 # Step 4: Build production assets
 echo ""
 echo "[4/5] Building production web bundle..."
 bun run build
+
+# Firebase Hosting serves dist/index.html as a static file, so it never passes
+# through server.ts and never receives the injected window.__FIREBASE_CONFIG__.
+# On this path the client's Firebase config is whatever Vite inlined from .env at
+# build time. Building without a .env therefore produces a bundle whose config is
+# empty, and sign-in fails at runtime with nothing in the build output to explain
+# it. Refuse to release such a bundle.
+BUNDLE_PROJECT_ID="${VITE_FIREBASE_PROJECT_ID:-}"
+if [ -z "$BUNDLE_PROJECT_ID" ] && [ -f .env ]; then
+  BUNDLE_PROJECT_ID=$(grep -E '^VITE_FIREBASE_PROJECT_ID=' .env | head -n1 | cut -d= -f2- | tr -d '"' || true)
+fi
+
+if [ -z "$BUNDLE_PROJECT_ID" ]; then
+  echo "✗ VITE_FIREBASE_PROJECT_ID is not set and no .env provides it." >&2
+  echo "  The built bundle would carry an empty Firebase config and sign-in would fail." >&2
+  echo "  Pull the secret first:  gcloud secrets versions access latest --secret=reflect-ai-env > .env" >&2
+  exit 1
+fi
+
+if ! grep -rqF "$BUNDLE_PROJECT_ID" dist/assets/*.js 2>/dev/null; then
+  echo "✗ The built bundle does not contain the Firebase project id." >&2
+  echo "  Vite inlines VITE_* at build time; something prevented that." >&2
+  echo "  Refusing to release a bundle that cannot sign anyone in." >&2
+  exit 1
+fi
+echo "✓ Bundle carries the Firebase client config"
 
 # Step 5: Deploy Firebase Hosting (replaces existing release)
 echo ""

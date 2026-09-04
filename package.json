@@ -22,7 +22,7 @@
     "hosting:create-site": "bash scripts/deploy-hosting.sh",
     "deploy:hosting": "bash scripts/deploy-hosting.sh",
     "deploy:cloud-run": "bash scripts/deploy-cloud-run.sh",
-    "deploy:rules": "firebase deploy --only firestore:rules",
+    "deploy:rules": "firebase deploy --only firestore",
     "deploy:firebase": "firebase deploy",
     "purge:history": "bash scripts/purge-git-history.sh"
   },

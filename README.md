@@ -126,8 +126,23 @@ and logs a warning while active.
 Deploy rules after changing them:
 
 ```bash
-firebase deploy --only firestore:rules
+bun run deploy:rules      # firebase deploy --only firestore
 ```
+
+> **Use `--only firestore`, not `--only firestore:rules`.** `firebase.json`
+> configures two databases (`(default)` and the provisioned `reflect-ai-app`).
+> With that layout `--only firestore:rules` reports "Deploy complete!" while
+> leaving the named database's rules untouched — a silent no-op that left a
+> self-escalation hole live in production after it appeared to be fixed.
+>
+> Verify what is actually released rather than trusting the CLI's output:
+>
+> ```bash
+> TOKEN=$(gcloud auth print-access-token)
+> curl -s -H "Authorization: Bearer $TOKEN" -H "x-goog-user-project: $PROJECT" \
+>   "https://firebaserules.googleapis.com/v1/projects/$PROJECT/releases" \
+>   | python3 -c "import json,sys; [print(r['name'].split('/')[-1], r['rulesetName'].split('/')[-1]) for r in json.load(sys.stdin)['releases']]"
+> ```
 
 `test/firestore-rules.test.ts` guards this statically in CI and in the pre-push
 hook, so a relaxed rule fails the build.
