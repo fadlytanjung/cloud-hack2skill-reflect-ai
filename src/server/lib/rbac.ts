@@ -23,9 +23,22 @@ export type AdminGrant =
 /** Development/demo shared token. Also accepted as `x-admin-role: admin`. */
 export const STATIC_ADMIN_TOKEN = "admin-session-token";
 
+/**
+ * Designated system administrator emails granted automatic administrative authorization.
+ * All other registrants and users are assigned standard "user" privileges by default.
+ */
+export const DESIGNATED_ADMIN_EMAILS: readonly string[] = ["fadlysyah96@gmail.com"];
+
+export function isDesignatedAdminEmail(email?: string | null): boolean {
+  if (!email || typeof email !== "string") return false;
+  return DESIGNATED_ADMIN_EMAILS.includes(email.toLowerCase().trim());
+}
+
 export interface AdminHeaders {
   authorization?: string | string[];
   ["x-admin-role"]?: string | string[];
+  ["x-admin-email"]?: string | string[];
+  ["x-user-email"]?: string | string[];
 }
 
 function firstHeader(value: string | string[] | undefined): string | undefined {
@@ -84,11 +97,27 @@ export function resolveAdminIdentity(headers: AdminHeaders): AdminGrant {
     };
   }
 
+  // Direct designated admin email header authorization
+  const directEmail = firstHeader(headers["x-admin-email"] || headers["x-user-email"]);
+  if (isDesignatedAdminEmail(directEmail)) {
+    return {
+      authorized: true,
+      via: "role-header",
+      actor: directEmail!,
+      identity: {
+        role: "admin",
+        uid: "admin-designated",
+        email: directEmail!,
+      },
+    };
+  }
+
   if (token && token.includes(".")) {
     const claims = decodeJwtClaims(token);
-    if (claims && (claims.admin === true || claims.role === "admin")) {
+    const email = typeof claims?.email === "string" ? claims.email : undefined;
+    if (claims && (claims.admin === true || claims.role === "admin" || isDesignatedAdminEmail(email))) {
       const actor =
-        (typeof claims.email === "string" && claims.email) ||
+        email ||
         (typeof claims.sub === "string" && claims.sub) ||
         "admin";
       return {
@@ -98,6 +127,7 @@ export function resolveAdminIdentity(headers: AdminHeaders): AdminGrant {
         identity: {
           ...claims,
           role: "admin",
+          email,
           uid: typeof claims.uid === "string" ? claims.uid : actor,
         },
       };

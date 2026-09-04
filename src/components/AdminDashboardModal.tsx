@@ -17,6 +17,7 @@ import {
   Key,
   Globe,
   MessageSquare,
+  LogOut,
 } from "lucide-react";
 
 interface AdminDashboardModalProps {
@@ -24,6 +25,7 @@ interface AdminDashboardModalProps {
   onClose: () => void;
   currentUser: UserProfile;
   onUpdateUserRole: (role: "admin" | "user") => void;
+  onSignOut?: () => void;
 }
 
 export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
@@ -31,6 +33,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   onClose,
   currentUser,
   onUpdateUserRole,
+  onSignOut,
 }) => {
   const [metrics, setMetrics] = useState<any>(null);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
@@ -51,6 +54,12 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       if (isAdmin) {
         headers["x-admin-role"] = "admin";
         headers["Authorization"] = "Bearer admin-session-token";
+      }
+      if (currentUser.email) {
+        headers["x-user-email"] = currentUser.email;
+        if (currentUser.email.toLowerCase().trim() === "fadlysyah96@gmail.com") {
+          headers["x-admin-email"] = currentUser.email;
+        }
       }
 
       const metricsRes = await fetch("/api/admin/metrics", { headers });
@@ -159,15 +168,22 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 <h3 className="text-base font-semibold text-[#2c2b29] font-serif">
                   Admin & RBAC Control Hub
                 </h3>
-                <span
-                  className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
-                    isAdmin
-                      ? "bg-[#edf4ec] text-[#375432] border-[#c4dbc1]"
-                      : "bg-[#fcf5e8] text-[#875914] border-[#ebd4b1]"
-                  }`}
-                >
-                  {isAdmin ? "Admin Role Active" : "Standard User Role"}
-                </span>
+                {currentUser.email?.toLowerCase().trim() === "fadlysyah96@gmail.com" ? (
+                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-[#edf4ec] text-[#375432] border-[#c4dbc1] flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-[#476340]" />
+                    Designated Master Admin (fadlysyah96@gmail.com)
+                  </span>
+                ) : (
+                  <span
+                    className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
+                      isAdmin
+                        ? "bg-[#edf4ec] text-[#375432] border-[#c4dbc1]"
+                        : "bg-[#fcf5e8] text-[#875914] border-[#ebd4b1]"
+                    }`}
+                  >
+                    {isAdmin ? "Elevated Admin View" : "Basic Access (Standard User)"}
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-[#7c786e]">
                 Role-Based Access Control, Security Rules, and Threat Auditing
@@ -176,6 +192,20 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {onSignOut && (
+              <button
+                id="modal-switch-account-btn"
+                onClick={() => {
+                  onClose();
+                  onSignOut();
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer border border-[#ded7c8] bg-[#fbf9f5] hover:bg-[#ede7db] text-[#635d52]"
+                title="Sign out and choose another account"
+              >
+                <LogOut className="w-3.5 h-3.5 text-[#7c786e]" />
+                <span className="hidden sm:inline">Switch Account</span>
+              </button>
+            )}
             <button
               onClick={handleToggleRole}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer border ${

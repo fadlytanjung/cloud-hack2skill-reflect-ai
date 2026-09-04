@@ -50,6 +50,25 @@ describe("admin route authorization", () => {
       .expect(200);
   });
 
+  it("grants access to the designated admin email fadlysyah96@gmail.com", async () => {
+    const { app } = createTestApp();
+    const res = await request(app)
+      .post("/api/admin/test-rbac")
+      .set("Authorization", `Bearer ${jwt({ email: "fadlysyah96@gmail.com", sub: "fadly-uid" })}`)
+      .expect(200);
+    expect(res.body.authorized).toBe(true);
+    expect(res.body.user).toMatchObject({ role: "admin", email: "fadlysyah96@gmail.com" });
+  });
+
+  it("denies access to a new registrant email without admin elevation", async () => {
+    const { app } = createTestApp();
+    const res = await request(app)
+      .post("/api/admin/test-rbac")
+      .set("Authorization", `Bearer ${jwt({ email: "newuser@example.com", role: "user", sub: "new-uid" })}`)
+      .expect(403);
+    expect(res.body.error).toBe("Access denied: Admin privileges required.");
+  });
+
   it("grants access to the x-admin-role simulation header", async () => {
     const { app } = createTestApp();
     await request(app).get("/api/admin/metrics").set("x-admin-role", "admin").expect(200);

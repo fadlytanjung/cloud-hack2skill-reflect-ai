@@ -1,5 +1,14 @@
 {
   "projects": {
-    "default": ""
+    "default": "cloud-hack2skill"
+  },
+  "targets": {
+    "cloud-hack2skill": {
+      "hosting": {
+        "reflect-ai": [
+          "cloud-hack2skill-reflect-ai"
+        ]
+      }
+    }
   }
 }

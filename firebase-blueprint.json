@@ -1,0 +1,46 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with role-based access control",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["uid", "role"]
+    },
+    "JournalInteraction": {
+      "title": "JournalInteraction",
+      "description": "User reflective journal entries, AI dialogues, and synthesized takeaways",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "persona": { "type": "string" },
+        "aiTakeaway": { "type": "string" },
+        "tags": { "type": "string" },
+        "messages": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "userId", "title", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile records and RBAC assignment"
+    },
+    "/users/{userId}/interactions/{interactionId}": {
+      "schema": "JournalInteraction",
+      "description": "User journal entries and AI interaction sessions isolated by userId"
+    }
+  }
+}

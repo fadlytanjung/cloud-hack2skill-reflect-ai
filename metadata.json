@@ -1,6 +1,6 @@
 {
   "name": "ReflectAI - Journal & Reflection Assistant",
-  "description": "User-authenticated multi-turn reflections and journaling with Gemini 3.6 Flash and user-isolated Cloud Firestore storage.",
+  "description": "A mindful personal journal and thought companion for deep reflections, daily clarity, and personal growth.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

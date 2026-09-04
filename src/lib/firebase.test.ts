@@ -38,7 +38,9 @@ vi.mock("firebase/auth", () => ({
 }));
 
 const {
+  DESIGNATED_ADMIN_EMAIL,
   deleteJournalEntry,
+  isDesignatedAdmin,
   isReferrerBlocked,
   logoutUser,
   onAuthUserChanged,
@@ -525,5 +527,29 @@ describe("onAuthUserChanged", () => {
     const unsubscribe = vi.fn();
     onAuthStateChanged.mockReturnValue(unsubscribe);
     expect(onAuthUserChanged(vi.fn())).toBe(unsubscribe);
+  });
+
+  it("automatically assigns role 'admin' to designated admin fadlysyah96@gmail.com", () => {
+    const profile = emit({
+      uid: "fadly-uid",
+      email: "fadlysyah96@gmail.com",
+      displayName: "Fadly",
+      photoURL: null,
+      isAnonymous: false,
+    });
+    expect(profile).toMatchObject({
+      email: "fadlysyah96@gmail.com",
+      role: "admin",
+    });
+  });
+
+  it("identifies designated admin email with case and whitespace insensitivity", () => {
+    expect(DESIGNATED_ADMIN_EMAIL).toBe("fadlysyah96@gmail.com");
+    expect(isDesignatedAdmin("fadlysyah96@gmail.com")).toBe(true);
+    expect(isDesignatedAdmin("FADLYSYAH96@GMAIL.COM")).toBe(true);
+    expect(isDesignatedAdmin("  fadlysyah96@gmail.com ")).toBe(true);
+    expect(isDesignatedAdmin("other@example.com")).toBe(false);
+    expect(isDesignatedAdmin("")).toBe(false);
+    expect(isDesignatedAdmin(null)).toBe(false);
   });
 });

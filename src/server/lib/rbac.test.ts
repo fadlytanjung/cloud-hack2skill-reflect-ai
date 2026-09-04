@@ -5,6 +5,7 @@ import {
   createVerifyAdmin,
   decodeJwtClaims,
   extractBearerToken,
+  isDesignatedAdminEmail,
   resolveAdminIdentity,
 } from "./rbac";
 
@@ -90,6 +91,45 @@ describe("resolveAdminIdentity", () => {
   it("grants access for a JWT carrying role: admin", () => {
     const grant = resolveAdminIdentity({ authorization: `Bearer ${makeJwt({ role: "admin" })}` });
     expect(grant.authorized).toBe(true);
+  });
+
+  it("grants access for the designated admin email fadlysyah96@gmail.com via JWT claim", () => {
+    const grant = resolveAdminIdentity({
+      authorization: `Bearer ${makeJwt({ email: "fadlysyah96@gmail.com", sub: "fadly-uid" })}`,
+    });
+    expect(grant.authorized).toBe(true);
+    if (!grant.authorized) return;
+    expect(grant.via).toBe("jwt-claim");
+    expect(grant.actor).toBe("fadlysyah96@gmail.com");
+    expect(grant.identity.role).toBe("admin");
+  });
+
+  it("grants access for the designated admin email via x-admin-email header", () => {
+    const grant = resolveAdminIdentity({
+      "x-admin-email": "fadlysyah96@gmail.com",
+    });
+    expect(grant.authorized).toBe(true);
+    if (!grant.authorized) return;
+    expect(grant.via).toBe("role-header");
+    expect(grant.actor).toBe("fadlysyah96@gmail.com");
+    expect(grant.identity.role).toBe("admin");
+  });
+
+  it("denies access to regular new registrant emails without admin privilege", () => {
+    const grant = resolveAdminIdentity({
+      authorization: `Bearer ${makeJwt({ email: "newuser@example.com", role: "user", sub: "new-uid" })}`,
+    });
+    expect(grant.authorized).toBe(false);
+  });
+
+  it("validates isDesignatedAdminEmail helper accuracy", () => {
+    expect(isDesignatedAdminEmail("fadlysyah96@gmail.com")).toBe(true);
+    expect(isDesignatedAdminEmail("FADLYSYAH96@GMAIL.COM")).toBe(true);
+    expect(isDesignatedAdminEmail("  fadlysyah96@gmail.com  ")).toBe(true);
+    expect(isDesignatedAdminEmail("other@gmail.com")).toBe(false);
+    expect(isDesignatedAdminEmail("")).toBe(false);
+    expect(isDesignatedAdminEmail(null)).toBe(false);
+    expect(isDesignatedAdminEmail(undefined)).toBe(false);
   });
 
   it("falls back to sub as the actor when no email claim is present", () => {

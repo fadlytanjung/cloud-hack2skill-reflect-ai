@@ -1,6 +1,7 @@
 import React from "react";
 import { UserProfile } from "../types";
-import { BookOpen, Sparkles, LogOut, ShieldCheck, Shield } from "lucide-react";
+import { Sparkles, LogOut, ShieldCheck, Shield } from "lucide-react";
+import { ReflectMascot } from "./ReflectMascot";
 
 interface NavbarProps {
   user: UserProfile;
@@ -22,9 +23,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         {/* Brand */}
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-[#eef3ed] border border-[#c9d8c6] flex items-center justify-center text-[#476340]">
-            <BookOpen className="w-5 h-5" />
-          </div>
+          <ReflectMascot size="sm" />
           <div>
             <div className="flex items-center space-x-2">
               <span className="font-semibold tracking-tight text-lg text-[#2c2b29] font-serif">ReflectAI</span>
@@ -33,7 +32,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 Gemini 3.6
               </span>
             </div>
-            <p className="text-xs text-[#7c786e] hidden sm:block">Private Journal & Reflection Companion</p>
+            <p className="text-xs text-[#7c786e] hidden sm:block">Mindful Personal Journal & Thought Companion</p>
           </div>
         </div>
 
@@ -104,22 +103,34 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             )}
             <div className="hidden lg:block text-left">
-              <div className="text-xs font-medium text-[#2c2b29] truncate max-w-[140px]">
-                {user.displayName || "Active User"}
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-medium text-[#2c2b29] truncate max-w-[120px]">
+                  {user.displayName || "Active User"}
+                </span>
+                <span
+                  className={`text-[9px] font-semibold px-1.5 py-0.2 rounded-md uppercase tracking-wider ${
+                    user.role === "admin"
+                      ? "bg-[#edf4ec] text-[#375432] border border-[#c4dbc1]"
+                      : "bg-[#f4efe6] text-[#787265] border border-[#ded7c8]"
+                  }`}
+                >
+                  {user.role === "admin" ? "Admin" : "User"}
+                </span>
               </div>
               <div className="text-[11px] text-[#7c786e] truncate max-w-[140px]">
                 {user.email || "Secure Session"}
               </div>
             </div>
 
-            {/* Logout button */}
+            {/* Switch Account / Logout button */}
             <button
               id="logout-button"
               onClick={onSignOut}
               title="Sign Out"
-              className="p-2 rounded-lg text-[#7c786e] hover:text-[#2c2b29] hover:bg-[#ede7db] transition cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-[#7c786e] hover:text-[#2c2b29] hover:bg-[#ede7db] transition cursor-pointer border border-transparent hover:border-[#ded7c8]"
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Sign Out</span>
             </button>
           </div>
         </div>

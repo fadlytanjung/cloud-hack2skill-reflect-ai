@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "cloud-hack2skill-reflect-ai",
     "public": "dist",
     "cleanUrls": true,
     "ignore": [
@@ -9,11 +10,15 @@
     ],
     "rewrites": [
       {
-        "source": "**",
+        "source": "/api/**",
         "run": {
           "serviceId": "reflectai-journal-reflection-assistant",
           "region": "us-west1"
         }
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
       }
     ],
     "headers": [

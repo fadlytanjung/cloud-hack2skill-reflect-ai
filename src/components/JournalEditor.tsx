@@ -3,6 +3,8 @@ import { JournalEntry, ReflectionMode, InteractionTurn } from "../types";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { LocationPickerModal } from "./LocationPickerModal";
 import { NotificationModal } from "./NotificationModal";
+import { ReflectMascot } from "./ReflectMascot";
+import { motion } from "motion/react";
 import {
   Sparkles,
   Send,
@@ -10,7 +12,6 @@ import {
   Check,
   Copy,
   AlertCircle,
-  Quote,
   MapPin,
   MessageSquare,
 } from "lucide-react";
@@ -480,15 +481,20 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
 
         {/* Empty State / Welcome to this Reflection */}
         {entry.turns.length === 0 && (
-          <div className="py-10 max-w-xl mx-auto text-center space-y-6">
-            <div className="w-12 h-12 rounded-2xl bg-[#eef3ed] border border-[#c9d8c6] flex items-center justify-center text-[#476340] mx-auto">
-              <Quote className="w-6 h-6" />
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+            className="py-10 max-w-xl mx-auto text-center space-y-6"
+          >
+            <div className="flex justify-center">
+              <ReflectMascot size="lg" />
             </div>
 
             <div className="space-y-2">
               <h3 className="font-serif text-xl text-[#2c2b29]">What reflection is on your mind?</h3>
               <p className="text-xs text-[#67635a] leading-relaxed">
-                Write freely. ReflectAI listens without judgment, asks gentle clarifying questions, and helps distill clarity using Gemini 3.6 Flash.
+                Write freely. ReflectAI listens with empathy and gentle clarity, asking thoughtful questions to help you unpack and organize your thoughts.
               </p>
             </div>
 
@@ -499,18 +505,20 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
               </div>
               <div className="grid grid-cols-1 gap-2">
                 {PROMPT_SUGGESTIONS.map((prompt, idx) => (
-                  <button
+                  <motion.button
                     key={idx}
+                    whileHover={{ y: -1, scale: 1.005 }}
+                    transition={{ duration: 0.15 }}
                     onClick={() => handleSubmitReflection(prompt)}
                     className="p-3 bg-[#ffffff] hover:bg-[#f8f5ee] border border-[#ded7c8] hover:border-[#476340]/40 rounded-xl text-xs text-[#3d3a34] text-left transition flex items-center justify-between group cursor-pointer shadow-2xs"
                   >
                     <span>{prompt}</span>
                     <Sparkles className="w-3.5 h-3.5 text-[#948f85] group-hover:text-[#476340] transition shrink-0 ml-2" />
-                  </button>
+                  </motion.button>
                 ))}
               </div>
             </div>
-          </div>
+          </motion.div>
         )}
 
         {/* Multi-turn Interaction Stream */}

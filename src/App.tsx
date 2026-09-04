@@ -7,6 +7,7 @@ import {
   deleteJournalEntry,
   subscribeToUserInteractions,
   syncOfflineEntries,
+  updateUserRoleInFirestore,
 } from "./lib/firebase";
 import { AuthLanding } from "./components/AuthLanding";
 import { Navbar } from "./components/Navbar";
@@ -184,6 +185,30 @@ export default function App() {
     }
   };
 
+  const handleSignOut = async () => {
+    try {
+      await logoutUser();
+    } catch (err) {
+      console.warn("Sign out notice:", err);
+    } finally {
+      setCurrentUser(null);
+      setEntries([]);
+      setActiveEntry(null);
+      setSelectedEntryId(null);
+      setIsAdminModalOpen(false);
+    }
+  };
+
+  const handleUpdateUserRole = async (newRole: "admin" | "user") => {
+    if (!currentUser) return;
+    setCurrentUser((prev) => (prev ? { ...prev, role: newRole } : null));
+    try {
+      await updateUserRoleInFirestore(currentUser.uid, newRole);
+    } catch (err) {
+      console.warn("Failed to persist role in database:", err);
+    }
+  };
+
   // Loading initial auth state
   if (!authInitialized) {
     return (
@@ -204,7 +229,7 @@ export default function App() {
       {/* Top Navigation */}
       <Navbar
         user={currentUser}
-        onSignOut={logoutUser}
+        onSignOut={handleSignOut}
         syncStatus={syncStatus}
         onRetrySync={handleRetrySync}
         onOpenAdmin={() => setIsAdminModalOpen(true)}
@@ -271,9 +296,8 @@ export default function App() {
         isOpen={isAdminModalOpen}
         onClose={() => setIsAdminModalOpen(false)}
         currentUser={currentUser}
-        onUpdateUserRole={(role) =>
-          setCurrentUser((prev) => (prev ? { ...prev, role } : null))
-        }
+        onUpdateUserRole={handleUpdateUserRole}
+        onSignOut={handleSignOut}
       />
     </div>
   );
